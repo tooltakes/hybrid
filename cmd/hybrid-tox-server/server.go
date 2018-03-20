@@ -31,7 +31,7 @@ func main() {
 		log.Fatal("user.Current", zap.Error(err))
 	}
 
-	configFile := flag.String("config", filepath.Join(cu.HomeDir, "hybrid.json"), "config file path")
+	configFile := flag.String("config", filepath.Join(cu.HomeDir, ".hybrid/tox-server.json"), "config file path")
 	flag.Parse()
 
 	configContent, err := ioutil.ReadFile(*configFile)
