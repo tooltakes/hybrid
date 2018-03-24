@@ -2,73 +2,91 @@ package main
 
 import (
 	"encoding/hex"
-	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/crypto/curve25519"
 
+	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/empirefox/hybrid"
-)
-
-var (
-	clientPubHex = strings.ToLower("F447C5472BDA9AC0DC98ACFE0E40D1434CC215CCF9D1729542A787BD0AEC5432")
-	serverPubHex = strings.ToLower("9AA0FF6C243F90947035FA4AA45353A705B4F9681299AC61A295E3C32911EB63")
-
-	serverScalar    [32]byte
-	serverScalarHex = []byte(strings.ToLower("CF43FFE81487EA74A519C568E5D2CD79611D3661919617B9D8E542F4ECAB8977"))
+	"github.com/empirefox/hybrid/hybridauth"
 )
 
 func main() {
-	log, err := zap.NewProduction()
+	log, err := zap.NewDevelopment()
 	defer log.Sync()
 	if err != nil {
 		panic(err)
 	}
 
-	_, err = hex.Decode(serverScalar[:], serverScalarHex)
+	c, err := LoadConfig()
 	if err != nil {
-		log.Error("serverScalar", zap.Error(err))
-		return
+		log.Fatal("LoadConfig", zap.Error(err))
 	}
 
-	cryptoConfig := &hybrid.CryptoConnServerConfig{
-		GetPrivateKey: GetPrivateKey,
+	if c.Port == 0 {
+		log.Fatal("Post must be set")
 	}
 
-	s := &hybrid.Server{
-		Log:             log,
-		ListenerCreator: hybrid.NewTCPListenerCreator(":19999", cryptoConfig),
-		TLSConfig:       nil,
-		ReverseProxy: &httputil.ReverseProxy{
-			Director: func(req *http.Request) {
-				_, err := httputil.DumpRequest(req, false)
-				if err != nil {
-					log.Error("DumpRequest", zap.Error(err))
-					return
+	scalar, err := tox.DecodeSecret(c.ScalarHex)
+	if err != nil {
+		log.Fatal("DecodeSecret", zap.Error(err))
+	}
+
+	var pubkey [32]byte
+	curve25519.ScalarBaseMult(&pubkey, scalar)
+
+	verifyKey, err := tox.DecodePubkey(c.VerifyKeyHex)
+	if err != nil {
+		log.Fatal("Parse verifyKey", zap.Error(err))
+	}
+	ver := Verifier(*verifyKey)
+	verifier := hybridauth.Verifier{&ver, &ver}
+
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", c.Port))
+	if err != nil {
+		log.Fatal("Listen", zap.Error(err))
+	}
+
+	ln = &hybrid.CryptoListener{
+		Log:      log,
+		Listener: ln,
+		CryptoConnServerConfig: hybrid.CryptoConnServerConfig{
+			GetPrivateKey: func(serverPublic *[32]byte) (serverPrivate *[32]byte, err error) {
+				if *serverPublic == pubkey {
+					clone := *scalar
+					return &clone, nil
 				}
+				return nil, fmt.Errorf("Server pubkey not found: %X", serverPublic[:])
 			},
+			VerifyClient: func(serverPublic, clientPublic *[32]byte, auth []byte) (interface{}, error) {
+				var pk [64]byte
+				hex.Encode(pk[:], clientPublic[:])
+				claims, err := verifier.Verify(pk[:], auth)
+				if err != nil {
+					log.Info("VerifyClient", zap.ByteString("pk", pk[:]), zap.Error(err))
+				}
+				return claims, err
+			},
+			TimestampValidIn: 20,
+		},
+	}
+
+	s := &hybrid.H2Server{
+		Log: log,
+		ReverseProxy: &httputil.ReverseProxy{
+			Director:      func(req *http.Request) {},
 			FlushInterval: time.Second,
 		},
 	}
 
-	err = s.Serve()
+	err = s.Serve(ln)
 	if err != nil {
 		log.Error("Serve", zap.Error(err))
 		return
 	}
-}
-
-func GetPrivateKey(serverPublic, clientPublic []byte) (serverPrivate *[32]byte, err error) {
-	if hex.EncodeToString(clientPublic) == clientPubHex && hex.EncodeToString(serverPublic) == serverPubHex {
-		// serverScalar will be reused
-		clone := serverScalar
-		return &clone, nil
-	}
-	fmt.Println(hex.EncodeToString(clientPublic), "==", clientPubHex)
-	fmt.Println(hex.EncodeToString(serverPublic), "==", serverPubHex)
-	return nil, errors.New("serverPrivate not found")
 }

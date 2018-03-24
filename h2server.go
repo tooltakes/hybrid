@@ -1,7 +1,6 @@
 package hybrid
 
 import (
-	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -13,36 +12,18 @@ import (
 	"golang.org/x/net/http2"
 )
 
-type ListenerCreator interface {
-	Create() (net.Listener, error)
-}
-
-type Server struct {
+type H2Server struct {
 	Log *zap.Logger
-
-	ListenerCreator ListenerCreator
-
-	TLSConfig *tls.Config
 
 	ReverseProxy *httputil.ReverseProxy
 
 	LocalHandler http.Handler
 }
 
-func (s *Server) Serve() error {
+func (s *H2Server) Serve(listener net.Listener) error {
 	s1 := &http.Server{Handler: s}
 	s2 := &http2.Server{}
 	http2.ConfigureServer(s1, s2)
-
-	listener, err := s.ListenerCreator.Create()
-	if err != nil {
-		return err
-	}
-	defer listener.Close()
-
-	if s.TLSConfig != nil {
-		listener = tls.NewListener(listener, s.TLSConfig)
-	}
 
 	if s.ReverseProxy.FlushInterval == 0 {
 		s.ReverseProxy.FlushInterval = 250 * time.Millisecond
@@ -54,7 +35,7 @@ func (s *Server) Serve() error {
 	})
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *H2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := r.Host[1:]
 
 	switch r.Host[0] {

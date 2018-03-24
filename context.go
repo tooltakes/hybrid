@@ -23,6 +23,7 @@ type Context struct {
 	HostNoPort   string
 	Port         string
 	IP           net.IP
+	Hybrid       string
 }
 
 func ReadContext(conn net.Conn) (*Context, error) {
@@ -37,6 +38,13 @@ func ReadContext(conn net.Conn) (*Context, error) {
 		Writer:       conn,
 		UnsafeReader: conn,
 		Connect:      req.Method == "CONNECT",
+	}
+
+	// abcd.hybrid:0 => the server program
+	// abcb.hybrid:80/0/a.html => 0.0.0.0:80/a.html on server
+	// abcb.hybrid:80/192.168.22.22/a.html => 192.168.22.22:80/a.html from server
+	if strings.HasSuffix(c.HostNoPort, HostHybridSuffix) {
+		c.Hybrid = strings.TrimSuffix(c.HostNoPort, HostHybridSuffix)
 	}
 
 	if !c.Connect {

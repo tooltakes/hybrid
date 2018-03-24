@@ -1,33 +1,43 @@
 package hybrid
 
-import "net"
+import (
+	"net"
+
+	"go.uber.org/zap"
+)
 
 type HandshakeError struct {
 	error
 }
 
+func NewHandshakeError(err error) *HandshakeError {
+	return &HandshakeError{err}
+}
+
 func (e *HandshakeError) Temporary() bool { return true }
 
 type CryptoListener struct {
+	Log *zap.Logger
 	net.Listener
-	Config *CryptoConnServerConfig
+	CryptoConnServerConfig
 }
 
-func (l *CryptoListener) Accept() (c net.Conn, err error) {
-	c, err = l.Listener.Accept()
+func (ln *CryptoListener) Accept() (net.Conn, error) {
+	c, err := ln.Listener.Accept()
 	if err != nil {
-		return
+		return nil, err
 	}
-	conn := c
-	c, err = NewCryptoServerConn(c, l.Config)
+	cn, _, err := NewCryptoServerConn(c, &ln.CryptoConnServerConfig)
 	if err != nil {
+		ln.Log.Error("NewCryptoServerConn", zap.Error(err))
 		err = &net.OpError{
 			Op:     "handshake",
-			Net:    "crypto",
-			Source: conn.RemoteAddr(),
-			Addr:   conn.LocalAddr(),
-			Err:    &HandshakeError{err},
+			Net:    "x25519",
+			Source: c.RemoteAddr(),
+			Addr:   c.LocalAddr(),
+			Err:    NewHandshakeError(err),
 		}
+		c.Close()
 	}
-	return
+	return cn, err
 }

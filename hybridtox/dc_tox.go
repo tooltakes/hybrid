@@ -14,6 +14,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	DefaultDialTimeout = time.Minute
+)
+
 var (
 	RequestRemoteSuperMessage = []byte("Master, please command me!")
 )
@@ -26,8 +30,6 @@ type ToxTCPConfig struct {
 	Log *zap.Logger
 	Tox *tox.Tox
 
-	// DialSecond should at least 1 second
-	DialSecond      time.Duration
 	Supers          []*[tox.ADDRESS_SIZE]byte
 	Servers         []*[tox.ADDRESS_SIZE]byte
 	RequestToken    func(pubkey *[tox.PUBLIC_KEY_SIZE]byte) []byte
@@ -98,21 +100,16 @@ func NewToxTCP(config ToxTCPConfig) *ToxTCP {
 	return pure
 }
 
-func (pure *ToxTCP) Create() (l net.Listener, err error) {
-	return pure.config.Tox, nil
-}
-
-func (pure *ToxTCP) Dial(addr string) (net.Conn, []string, error) {
+func (pure *ToxTCP) Dial(addr string) (net.Conn, error) {
 	addr = strings.SplitN(addr, ":", 2)[0]
 	address, err := tox.DecodeAddress(addr)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*pure.config.DialSecond)
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultDialTimeout)
 	defer cancel()
-	c, err := pure.DialContext(ctx, address)
-	return c, nil, err
+	return pure.DialContext(ctx, address)
 }
 
 func (pure *ToxTCP) DialContext(ctx context.Context, address *[tox.ADDRESS_SIZE]byte) (net.Conn, error) {
@@ -125,8 +122,9 @@ func (pure *ToxTCP) DialContext(ctx context.Context, address *[tox.ADDRESS_SIZE]
 	var err error
 	waiting := make(chan struct{}, 1)
 	done := make(chan struct{}, 1)
+	defer close(done)
 	t.DoInLoop(func() {
-		defer close(done)
+		defer func() { done <- struct{}{} }()
 
 		friend, ok = pure.pk2Friends[*pubkey]
 		if !ok || !friend.isServer {
@@ -161,10 +159,11 @@ func (pure *ToxTCP) DialContext(ctx context.Context, address *[tox.ADDRESS_SIZE]
 	})
 	<-done
 	if err != nil {
+		close(waiting)
 		return nil, err
 	}
 
-	pure.config.Log.Info("waiting server add me...")
+	pure.config.Log.Info("Waiting tox server", zap.String("pubkey", fmt.Sprintf("%X", friend.pubkey[:4])))
 	select {
 	case <-waiting:
 	case <-ctx.Done():
@@ -175,16 +174,16 @@ func (pure *ToxTCP) DialContext(ctx context.Context, address *[tox.ADDRESS_SIZE]
 		return nil, ctx.Err()
 	}
 
-	done = make(chan struct{}, 1)
 	var c net.Conn
 	t.DoInLoop(func() {
 		c, err = t.Dial_l(friendNumber)
-		close(done)
+		done <- struct{}{}
 	})
 	<-done
 	return c, err
 }
 
+// TODO fix tox cannot come online again after TOX_CONNECTION_NONE
 func (pure *ToxTCP) onSelfConnectionStatus(status toxenums.TOX_CONNECTION) {
 	pure.config.Log.Info("onSelfConnectionStatus", zap.Stringer("status", status))
 	if status != toxenums.TOX_CONNECTION_NONE {
@@ -197,24 +196,22 @@ func (pure *ToxTCP) onSelfConnectionStatus(status toxenums.TOX_CONNECTION) {
 			}
 		}
 	} else {
-		var toDelete []uint32
-		for _, address := range pure.config.Supers {
-			friendNumber, ok := pure.config.Tox.FriendByPublicKey(tox.ToPubkey(address))
-			if ok {
-				toDelete = append(toDelete, friendNumber)
-			}
+		if len(pure.config.Supers) > 0 {
+			pure.config.Tox.CallbackPostIterateOnce_l(func() time.Duration {
+				for _, address := range pure.config.Supers {
+					friendNumber, ok := pure.config.Tox.FriendByPublicKey(tox.ToPubkey(address))
+					if ok {
+						pure.config.Tox.FriendDelete_l(friendNumber)
+					}
+				}
+				return 0
+			})
 		}
-		pure.config.Tox.CallbackPostIterateOnce_l(func() time.Duration {
-			for _, friendNumber := range toDelete {
-				pure.config.Tox.FriendDelete_l(friendNumber)
-			}
-			return 0
-		})
 	}
 }
 
 func (pure *ToxTCP) onFriendRequest(pubkey *[tox.PUBLIC_KEY_SIZE]byte, message []byte) {
-	pure.config.Log.Info("onFriendRequest", zap.ByteString("message", message))
+	pure.config.Log.Debug("onFriendRequest", zap.ByteString("message", message))
 	if _, ok := pure.pk2Friends[*pubkey]; ok {
 		pure.config.Tox.FriendAddNorequest_l(pubkey)
 		return
@@ -280,8 +277,10 @@ func (pure *ToxTCP) onServerAdded(friend *friend, friendNumber uint32, waiting c
 }
 
 func (pure *ToxTCP) onServerDeleted(friend *friend) {
-	delete(pure.num2Friends, friend.friendNumber)
-	friend.friendNumber = math.MaxUint32
+	if friend.friendNumber != math.MaxUint32 {
+		delete(pure.num2Friends, friend.friendNumber)
+		friend.friendNumber = math.MaxUint32
+	}
 	if friend.waiting != nil {
 		close(friend.waiting)
 		friend.waiting = nil

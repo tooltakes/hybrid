@@ -1,10 +1,8 @@
 package hybrid
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,37 +10,6 @@ import (
 
 	"golang.org/x/crypto/curve25519"
 )
-
-var (
-	base64chars        = []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
-	base64charsBlake2b = []byte("632b4264d09e9ed9764252cf1623f2f11cab4b4bf0aa66a79a5baca9d9586e1dcf538b737946cf426e3ecf711d3e9e239daecd31fcb717973b5f54054b156d1a")
-)
-
-func TestFixedEndlessNoncer(t *testing.T) {
-	n, err := NewFixedEndlessNoncer(base64chars)
-	if err != nil {
-		t.Errorf("should no error, but got: %v", err)
-		return
-	}
-
-	var nonce []byte
-	if nonce = n.Next(); string(nonce) != "ABCDEFGHIJKL" {
-		t.Errorf("should get ABCDEFGHIJKL, but got %s", nonce)
-		return
-	}
-
-	n.p = 63
-	if nonce = n.Next(); string(nonce) != "/ABCDEFGHIJK" {
-		t.Errorf("should get /ABCDEFGHIJK, but got %s", nonce)
-		return
-	}
-
-	var noncestr string
-	if noncestr = hex.EncodeToString(n.Next()); noncestr != "632b4264d09e9ed9764252cf" {
-		t.Errorf("should get 632b4264d09e9ed9764252cf, but got %s", noncestr)
-		return
-	}
-}
 
 func TestCryptoConnHandshake(t *testing.T) {
 	var serverScalar, serverPub [32]byte
@@ -66,15 +33,24 @@ func TestCryptoConnHandshake(t *testing.T) {
 	go func() {
 		defer server.Close()
 		serverConfig := &CryptoConnServerConfig{
-			GetPrivateKey: func(serverPublic, clientPublic []byte) (serverPrivate *[32]byte, err error) {
-				if bytes.Compare(clientPublic, clientPub[:])|bytes.Compare(serverPublic, serverPub[:]) == 0 {
-					return &serverScalar, nil
+			GetPrivateKey: func(serverPublic *[32]byte) (serverPrivate *[32]byte, err error) {
+				if *serverPublic == serverPub {
+					clone := serverScalar
+					return &clone, nil
 				}
-				return nil, errors.New("serverPrivate not found")
+				return nil, fmt.Errorf("GetPrivateKey: %X != %X", *serverPublic, serverPub)
 			},
+			VerifyClient: func(serverPublic, clientPublic *[32]byte, auth []byte) (interface{}, error) {
+				if *clientPublic == clientPub {
+					return nil, nil
+				}
+				return nil, fmt.Errorf("VerifyClient: %X != %X", *clientPublic, clientPub)
+			},
+			TimestampValidIn: 5,
 		}
-		serverConn, err := NewCryptoServerConn(&copyWriteConn{server}, serverConfig)
+		serverConn, _, err := NewCryptoServerConn(&copyWriteConn{server}, serverConfig)
 		if err != nil {
+			panic(err)
 			errCh <- err
 			return
 		}
@@ -97,8 +73,10 @@ func TestCryptoConnHandshake(t *testing.T) {
 	}()
 
 	clientConfig := &CryptoConnConfig{
-		ServerPublic: &serverPub,
-		ClientScalar: &clientScalar,
+		ServerPublic:     &serverPub,
+		ClientScalar:     &clientScalar,
+		Authorization:    []byte("I am valid"),
+		TimestampValidIn: 5,
 	}
 	clientConn, err := NewCryptoConn(&copyWriteConn{client}, clientConfig)
 	if err != nil {
@@ -119,7 +97,7 @@ func TestCryptoConnHandshake(t *testing.T) {
 	}
 
 	if string(b[:n]) != "987654321" {
-		t.Errorf("client should get 987654321, but got ", string(b))
+		t.Errorf("client should get 987654321, but got %s", string(b))
 		return
 	}
 
@@ -145,3 +123,5 @@ func (c *copyWriteConn) Write(b []byte) (int, error) {
 	copy(p, b)
 	return c.Conn.Write(p)
 }
+
+func hexOf(d []byte) string { return hex.EncodeToString(d) }

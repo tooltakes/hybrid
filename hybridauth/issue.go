@@ -2,6 +2,7 @@ package hybridauth
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"io"
 	"time"
 
@@ -21,7 +22,7 @@ func (ns *NonceSource) Nonce() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(nonce), nil
+	return hex.EncodeToString(nonce), nil
 }
 
 type Signer struct {
@@ -54,7 +55,7 @@ func NewIssuer(s *Signer) (*Issuer, error) {
 	signer, err := jose.NewSigner(jose.SigningKey{
 		Algorithm: jose.EdDSA,
 		Key: jose.JSONWebKey{
-			KeyID: string(keyid),
+			KeyID: hex.EncodeToString(keyid),
 			Key:   s.Key,
 		},
 	}, opts)

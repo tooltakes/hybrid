@@ -1,13 +1,9 @@
 package main
 
 import (
-	"encoding/json"
-	"flag"
-	"io/ioutil"
+	"encoding/hex"
 	"net/http"
 	"net/http/httputil"
-	"os/user"
-	"path/filepath"
 	"time"
 
 	"go.uber.org/zap"
@@ -20,32 +16,18 @@ import (
 )
 
 func main() {
-	log, err := zap.NewProduction()
+	log, err := zap.NewDevelopment()
 	defer log.Sync()
 	if err != nil {
 		panic(err)
 	}
 
-	cu, err := user.Current()
-	if err != nil {
-		log.Fatal("user.Current", zap.Error(err))
-	}
-
-	configFile := flag.String("config", filepath.Join(cu.HomeDir, ".hybrid/tox-server.json"), "config file path")
-	flag.Parse()
-
-	configContent, err := ioutil.ReadFile(*configFile)
-	if err != nil {
-		log.Fatal("Read config file", zap.Error(err))
-	}
-
-	var config Config
-	err = json.Unmarshal(configContent, &config)
+	config, err := LoadConfig()
 	if err != nil {
 		log.Fatal("Parse config file", zap.Error(err))
 	}
 
-	toxSecret, err := tox.DecodeSecret(config.ToxSecretHex)
+	toxSecret, err := tox.DecodeSecret(config.SecretHex)
 	if err != nil {
 		log.Fatal("Parse toxSecret", zap.Error(err))
 	}
@@ -61,7 +43,7 @@ func main() {
 		Savedata_type:           toxenums.TOX_SAVEDATA_TYPE_SECRET_KEY,
 		Savedata_data:           toxSecret[:],
 		Tcp_port:                0,
-		NospamIfSecretType:      61966761,
+		NospamIfSecretType:      config.Nospam,
 		ProxyToNoneIfErr:        true,
 		AutoTcpPortIfErr:        true,
 		DisableTcpPortIfAutoErr: true,
@@ -74,12 +56,18 @@ func main() {
 	tt := hybridtox.NewToxTCP(hybridtox.ToxTCPConfig{
 		Log:          log,
 		Tox:          t,
-		DialSecond:   0,
 		Supers:       nil,
 		Servers:      nil,
 		RequestToken: func(pubkey *[tox.PUBLIC_KEY_SIZE]byte) []byte { return []byte("i'm a invalid client") },
 		ValidateRequest: func(pubkey *[tox.PUBLIC_KEY_SIZE]byte, message []byte) bool {
-			_, err := verifier.Verify(pubkey[:], message)
+			var pk [64]byte
+			hex.Encode(pk[:], pubkey[:])
+			_, err := verifier.Verify(pk[:], message)
+			if err != nil {
+				if err != nil {
+					log.Info("VerifyClient", zap.ByteString("pk", pk[:]), zap.Error(err))
+				}
+			}
 			return err == nil
 		},
 
@@ -96,29 +84,25 @@ func main() {
 
 	result := t.BootstrapNodes_l(hybridtox.ToxNodes)
 	if result.Error() != nil {
+		t.Kill()
 		log.Fatal("BootstrapNodes_l", zap.Error(result.Error()))
 	}
 
 	go t.Run()
+	defer t.StopAndKill()
 
-	s := &hybrid.Server{
-		Log:             log,
-		ListenerCreator: tt,
-		TLSConfig:       nil,
+	s := &hybrid.H2Server{
+		Log: log,
 		ReverseProxy: &httputil.ReverseProxy{
-			Director: func(req *http.Request) {
-				_, err := httputil.DumpRequest(req, false)
-				if err != nil {
-					log.Error("DumpRequest", zap.Error(err))
-					return
-				}
-			},
+			Director:      func(req *http.Request) {},
 			FlushInterval: time.Second,
 		},
+		LocalHandler: nil,
 	}
 
-	err = s.Serve()
+	err = s.Serve(t)
 	if err != nil {
 		log.Fatal("Serve", zap.Error(err))
 	}
+	_ = tt
 }

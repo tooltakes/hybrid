@@ -5,13 +5,18 @@ const (
 	HostHttpsPrefix byte = 'S'
 
 	HostHybridSuffix = ".hybrid"
-	HostLocalhost    = "localhost.hybrid"
-	HostLocal127     = "127.0.0.1.hybrid"
+	HostLocalhost    = "localhost"
+	HostLocal127     = "127.0.0.1"
+	HostLocal0000    = "0.0.0.0"
+	HostLocal0       = "0"
 
 	HostPing        = "P"
-	HostLocalServer = "L"
+	HostLocalServer = "0"
+
+	ClientAuthOK byte = 0xa1
 )
 
 var (
-	StandardConnectOK = []byte("HTTP/1.1 200 OK\r\n\r\n")
+	StandardConnectOK               = []byte("HTTP/1.1 200 OK\r\n\r\n")
+	StandardLocalServiceUnaviliable = []byte("HTTP/1.1 503 Local Service Unaviliable\r\n\r\n")
 )

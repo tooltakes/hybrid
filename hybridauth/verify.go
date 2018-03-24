@@ -2,6 +2,7 @@ package hybridauth
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 var (
-	ErrKeyIDLen    = errors.New("kid length not 4")
+	ErrKeyIDLen    = errors.New("kid length not 8")
 	ErrKeyAlgo     = errors.New("alg not eddsa")
 	ErrKeyNotFound = errors.New("key not found")
 	ErrToxRevoked  = errors.New("tox revoked")
@@ -46,11 +47,16 @@ func (v *Verifier) Verify(pk []byte, raw []byte) (*jwt.Claims, error) {
 	}
 
 	keyid := []byte(header.KeyID)
-	if len(keyid) != 4 {
+	if len(keyid) != 8 {
 		return nil, ErrKeyIDLen
 	}
 
-	key, ok := v.VerifyKey(binary.BigEndian.Uint32(keyid))
+	_, err = hex.Decode(keyid, keyid)
+	if err != nil {
+		return nil, err
+	}
+
+	key, ok := v.VerifyKey(binary.BigEndian.Uint32(keyid[:4]))
 	if !ok {
 		return nil, ErrKeyNotFound
 	}

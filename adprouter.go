@@ -3,8 +3,8 @@ package hybrid
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"io"
-	"net/url"
 	"sync"
 	"time"
 
@@ -14,25 +14,30 @@ import (
 	"github.com/pmezard/adblock/adblock"
 )
 
+var (
+	ErrEmptyAdpRules = errors.New("empty adp rules loaded")
+)
+
 type AdpRouterConfig struct {
 	Log       *zap.Logger
 	Disabled  bool
-	Exist     string
-	Blocked   *url.URL
-	Unblocked *url.URL
+	Blocked   Proxy
+	Unblocked Proxy
 	B64Rules  [][]byte
 	TxtRules  [][]byte
+
+	EtcHostsIPAsBlocked bool
 }
 
 type AdpRouter struct {
 	log          *zap.Logger
-	config       *AdpRouterConfig
+	config       AdpRouterConfig
 	adpMatcher   *adblock.RuleMatcher
 	blockedIps   map[string]bool
 	blockedIpsMu sync.RWMutex
 }
 
-func NewAdpRouter(config *AdpRouterConfig) (*AdpRouter, error) {
+func NewAdpRouter(config AdpRouterConfig) (*AdpRouter, error) {
 	r := &AdpRouter{
 		log:        config.Log,
 		config:     config,
@@ -46,7 +51,7 @@ func NewAdpRouter(config *AdpRouterConfig) (*AdpRouter, error) {
 	return r, nil
 }
 
-func (r *AdpRouter) Route(c *Context) *url.URL {
+func (r *AdpRouter) Route(c *Context) Proxy {
 	if blocked := r.blocked(c); blocked {
 		return r.config.Blocked
 	}
@@ -87,20 +92,25 @@ func (r *AdpRouter) init() error {
 		added += n
 	}
 
+	if added == 0 {
+		return ErrEmptyAdpRules
+	}
 	r.log.Info("AdpList rules loaded", zap.Int("total", added))
 
 	// init blockedIps only after adpMatcher
-	hf, errs := hostess.LoadHostfile()
-	if errs != nil {
-		r.log.Debug("hosts errors")
-		for _, err := range errs {
-			r.log.Debug("hosts entry", zap.Error(err))
+	if r.config.EtcHostsIPAsBlocked {
+		hf, errs := hostess.LoadHostfile()
+		if errs != nil {
+			r.log.Debug("hosts errors")
+			for _, err := range errs {
+				r.log.Debug("hosts entry", zap.Error(err))
+			}
 		}
-	}
 
-	for _, hostname := range hf.Hosts {
-		if hostname.Enabled && hostname.IsValid() && r.AdpMatch("http://"+hostname.Domain) {
-			r.blockedIps[hostname.IP.String()] = true
+		for _, hostname := range hf.Hosts {
+			if hostname.Enabled && hostname.IsValid() && r.AdpMatch("http://"+hostname.Domain) {
+				r.blockedIps[hostname.IP.String()] = true
+			}
 		}
 	}
 
@@ -108,7 +118,6 @@ func (r *AdpRouter) init() error {
 }
 
 func (r *AdpRouter) Disabled() bool { return r.config.Disabled }
-func (r *AdpRouter) Exist() string  { return r.config.Exist }
 
 func (r *AdpRouter) AdpMatch(u string) bool {
 	rq := &adblock.Request{

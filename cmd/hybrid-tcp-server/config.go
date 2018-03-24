@@ -12,10 +12,10 @@ import (
 
 // tox-account
 //{
-//  "Address": "8FD5F4939584F3D56EAA15113483FE5F91CC5ACAE1CEBCFB63F771C9CE16E83201676F096037",
-//  "Secret": "9421F0FC2E2D08D8250D8EAE551AAB6151B8948457B0D29CD21565853F0898F2",
-//  "Pubkey": "8FD5F4939584F3D56EAA15113483FE5F91CC5ACAE1CEBCFB63F771C9CE16E832",
-//  "Nospam": 23555849
+//  "Address": "34402FB6A24AD8B0C520F08C125E71E0B44E4582E077F88A2A3CDE41C46070220F1769E6F8E1",
+//  "Secret": "BC12FF844BCCE31EEA102611E8898C3107DE25101F3FE95039DBFB6DFEE29432",
+//  "Pubkey": "34402FB6A24AD8B0C520F08C125E71E0B44E4582E077F88A2A3CDE41C4607022",
+//  "Nospam": 253192678
 //}
 
 // hybrid-issuer
@@ -28,11 +28,12 @@ func (v *Verifier) VerifyKey(id uint32) ([]byte, bool) { return v[:], true }
 func (v *Verifier) Revoked(id []byte) bool             { return false }
 
 type Config struct {
-	SecretHex    string `validate:"len=64,hexadecimal"`
-	Nospam       uint32 `validate:"required"`
+	ScalarHex    string `validate:"len=64,hexadecimal"`
 	VerifyKeyHex string `validate:"len=64,hexadecimal"`
-	Config       string `env:"HYBRID_TOX_SERVER_CONFIG" validate:"required" default:"$HOME/.hybrid/tox-server.json" json:"-" yaml:"-" toml:"-"`
-	Dev          bool   `env:"HYBRID_TOX_SERVER_DEV"`
+
+	Config string `env:"HYBRID_TCP_SERVER_CONFIG" validate:"required" default:"$HOME/.hybrid/tcp-server.json" json:"-" yaml:"-" toml:"-"`
+	Dev    bool   `env:"HYBRID_TCP_SERVER_DEV"`
+	Port   uint16 `env:"HYBRID_TCP_SERVER_PORT"   validate:"gt=0"     default:"9999"`
 }
 
 func LoadConfig() (*Config, error) {

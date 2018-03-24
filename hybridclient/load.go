@@ -1,15 +1,16 @@
-package hybridconfig
+package hybridclient
 
 import (
 	"encoding/json"
 	"io/ioutil"
+	"os"
 
 	"github.com/caarlos0/env"
 	defaults "github.com/mcuadros/go-defaults"
 	validator "gopkg.in/go-playground/validator.v9"
 )
 
-func Load() (*Config, error) {
+func LoadConfig() (*Config, error) {
 	c := new(Config)
 	err := env.Parse(c)
 	if err != nil {
@@ -18,7 +19,7 @@ func Load() (*Config, error) {
 
 	defaults.SetDefaults(c)
 
-	configContent, err := ioutil.ReadFile(c.Config)
+	configContent, err := ioutil.ReadFile(os.ExpandEnv(c.Config))
 	if err != nil {
 		return nil, err
 	}
