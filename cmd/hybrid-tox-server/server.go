@@ -52,6 +52,7 @@ func main() {
 	if err != nil {
 		log.Fatal("NewTox", zap.Error(err))
 	}
+	defer t.Kill()
 
 	tt := hybridtox.NewToxTCP(hybridtox.ToxTCPConfig{
 		Log:          log,
@@ -84,12 +85,11 @@ func main() {
 
 	result := t.BootstrapNodes_l(hybridtox.ToxNodes)
 	if result.Error() != nil {
-		t.Kill()
 		log.Fatal("BootstrapNodes_l", zap.Error(result.Error()))
 	}
 
 	go t.Run()
-	defer t.StopAndKill()
+	defer t.Stop()
 
 	s := &hybrid.H2Server{
 		Log: log,

@@ -27,9 +27,9 @@ func init() {
 }
 
 type ToxTCPConfig struct {
-	Log *zap.Logger
-	Tox *tox.Tox
-
+	Log             *zap.Logger
+	Tox             *tox.Tox
+	DialOfflineThen []tox.BootstrapNode
 	Supers          []*[tox.ADDRESS_SIZE]byte
 	Servers         []*[tox.ADDRESS_SIZE]byte
 	RequestToken    func(pubkey *[tox.PUBLIC_KEY_SIZE]byte) []byte
@@ -59,6 +59,7 @@ type ToxTCP struct {
 	onlineWaiting   map[uint32]chan struct{}
 	num2Friends     map[uint32]*friend
 	pk2Friends      map[[tox.PUBLIC_KEY_SIZE]byte]*friend
+	offline         bool
 }
 
 func NewToxTCP(config ToxTCPConfig) *ToxTCP {
@@ -69,6 +70,8 @@ func NewToxTCP(config ToxTCPConfig) *ToxTCP {
 		onlineWaiting:   make(map[uint32]chan struct{}),
 		num2Friends:     make(map[uint32]*friend),
 		pk2Friends:      make(map[[tox.PUBLIC_KEY_SIZE]byte]*friend),
+		// used to fix come online again after TOX_CONNECTION_NONE
+		offline: true,
 	}
 	for _, address := range config.Supers {
 		pubkey := tox.ToPubkey(address)
@@ -125,6 +128,10 @@ func (pure *ToxTCP) DialContext(ctx context.Context, address *[tox.ADDRESS_SIZE]
 	defer close(done)
 	t.DoInLoop(func() {
 		defer func() { done <- struct{}{} }()
+
+		if pure.offline {
+			t.BootstrapNodes_l(pure.config.DialOfflineThen)
+		}
 
 		friend, ok = pure.pk2Friends[*pubkey]
 		if !ok || !friend.isServer {
@@ -183,7 +190,6 @@ func (pure *ToxTCP) DialContext(ctx context.Context, address *[tox.ADDRESS_SIZE]
 	return c, err
 }
 
-// TODO fix tox cannot come online again after TOX_CONNECTION_NONE
 func (pure *ToxTCP) onSelfConnectionStatus(status toxenums.TOX_CONNECTION) {
 	pure.config.Log.Info("onSelfConnectionStatus", zap.Stringer("status", status))
 	if status != toxenums.TOX_CONNECTION_NONE {
@@ -208,6 +214,7 @@ func (pure *ToxTCP) onSelfConnectionStatus(status toxenums.TOX_CONNECTION) {
 			})
 		}
 	}
+	pure.offline = status == toxenums.TOX_CONNECTION_NONE
 }
 
 func (pure *ToxTCP) onFriendRequest(pubkey *[tox.PUBLIC_KEY_SIZE]byte, message []byte) {

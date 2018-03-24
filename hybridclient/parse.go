@@ -233,7 +233,7 @@ func (c *Client) newNetRouter(name string, raw *IPNetRouter) (*hybrid.IPNetRoute
 	if raw.FileTest != "" {
 		p, ok := c.fileClients[raw.FileTest]
 		if !ok {
-			return nil, fmt.Errorf("IPNetRouter(%s) FileTest name(%s) not found", name, raw.FileTest)
+			return nil, fmt.Errorf("IPNetRouter(%s) FileTest(%s) not found", name, raw.FileTest)
 		}
 		router.FileClient = p
 	}

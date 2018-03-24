@@ -167,6 +167,7 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 		tt := hybridtox.NewToxTCP(hybridtox.ToxTCPConfig{
 			Log:             log,
 			Tox:             t,
+			DialOfflineThen: c.toxNodes,
 			Supers:          nil,
 			Servers:         toxServers,
 			RequestToken:    func(pubkey *[tox.PUBLIC_KEY_SIZE]byte) []byte { return toxTokens[*pubkey] },
@@ -227,7 +228,17 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 	return &c, nil
 }
 
-func (c *Client) Run() error {
+// BeforeRun
+func (c *Client) BeforeRun() error {
+	if c.listener == nil {
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", c.config.Expose))
+		if err != nil {
+			c.log.Error("Listen", zap.Error(err))
+			return err
+		}
+		c.listener = ln
+	}
+
 	if c.tox != nil {
 		result := c.tox.BootstrapNodes_l(c.toxNodes)
 		if result.Error() != nil {
@@ -236,24 +247,19 @@ func (c *Client) Run() error {
 		}
 	}
 
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", c.config.Expose))
-	if err != nil {
-		c.log.Error("Listen", zap.Error(err))
-		return err
-	}
-	defer ln.Close()
-	c.listener = ln
+	return nil
+}
 
+func (c *Client) Run() error {
 	if c.tox != nil {
 		go c.tox.Run()
 	}
-
-	err = hybrid.SimpleListenAndServe(ln, c.Proxy)
+	err := hybrid.SimpleListenAndServe(c.listener, c.Proxy)
 	if err != nil {
 		c.log.Error("SimpleListenAndServe", zap.Error(err))
-		if c.tox != nil {
-			c.tox.StopAndKill()
-		}
+	}
+	if c.tox != nil {
+		c.tox.Stop()
 	}
 	return err
 }

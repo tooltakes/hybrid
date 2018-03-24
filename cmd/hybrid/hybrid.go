@@ -29,6 +29,12 @@ func main() {
 	if err != nil {
 		log.Fatal("NewClient", zap.Error(err))
 	}
+	defer client.StopAndKill()
+
+	err = client.BeforeRun()
+	if err != nil {
+		log.Fatal("BeforeRun", zap.Error(err))
+	}
 
 	err = client.Run()
 	if err != nil {
