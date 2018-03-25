@@ -22,6 +22,7 @@ type Context struct {
 	HostPort     string
 	HostNoPort   string
 	Port         string
+	HasPort      bool
 	IP           net.IP
 	Hybrid       string
 }
@@ -38,13 +39,7 @@ func ReadContext(conn net.Conn) (*Context, error) {
 		Writer:       conn,
 		UnsafeReader: conn,
 		Connect:      req.Method == "CONNECT",
-	}
-
-	// abcd.hybrid:0 => the server program
-	// abcb.hybrid:80/0/a.html => 0.0.0.0:80/a.html on server
-	// abcb.hybrid:80/192.168.22.22/a.html => 192.168.22.22:80/a.html from server
-	if strings.HasSuffix(c.HostNoPort, HostHybridSuffix) {
-		c.Hybrid = strings.TrimSuffix(c.HostNoPort, HostHybridSuffix)
+		HasPort:      true,
 	}
 
 	if !c.Connect {
@@ -59,6 +54,17 @@ func ReadContext(conn net.Conn) (*Context, error) {
 		}
 	}
 
+	c.parseHybrid()
+	err = c.parseHostPortIP()
+	if err != nil {
+		return nil, err
+	}
+
+	return &c, nil
+}
+
+func (c *Context) parseHostPortIP() error {
+	req := c.Request
 	if c.Connect {
 		// requestURI must be a valid authority
 
@@ -72,24 +78,59 @@ func ReadContext(conn net.Conn) (*Context, error) {
 		// the same. In the second case, any Host line is ignored.
 		hostNoPort, port, err := net.SplitHostPort(req.Host)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		c.HostNoPort = hostNoPort
 		c.Port = port
 		c.HostPort = net.JoinHostPort(hostNoPort, port)
-		c.IP = net.ParseIP(hostNoPort)
+		c.IP = net.ParseIP(c.HostNoPort)
 
-		return &c, nil
+		return nil
 	}
 
 	if req.URL.Scheme == "" || req.URL.Host == "" {
-		return nil, ErrRequestURI
+		return ErrRequestURI
 	}
 
 	c.HostPort, c.HostNoPort, c.Port = authorityAddrFull(req.URL.Scheme, req.URL.Host)
 	c.IP = net.ParseIP(c.HostNoPort)
-	return &c, nil
+	return nil
+}
+
+func (c *Context) parseHybrid() {
+	req := c.Request
+	hostNoPort, port, err := net.SplitHostPort(req.Host)
+	if err != nil {
+		c.HasPort = false
+		hostNoPort = req.Host
+	}
+	if strings.HasSuffix(hostNoPort, HostHybridSuffix) {
+		// abcd.hybrid:880 => the server program
+		// 0.abcd.hybrid:80 => 0.0.0.0.abcd.hybrid:80 => the port 80 on server
+		// 192.168.22.22.abcd.hybrid:80/a.html => 192.168.22.22:80/a.html from server
+		c.Hybrid = strings.TrimSuffix(hostNoPort, HostHybridSuffix)
+		idx := strings.LastIndexByte(c.Hybrid, '.')
+		if idx == -1 {
+			// abcd.hybrid:80
+			req.Host = ""
+		} else {
+			// 0.abcd.hybrid:80
+			req.Host = c.Hybrid[:idx]
+			c.Hybrid = c.Hybrid[idx+1:]
+			if req.Host == HostLocal0 {
+				req.Host = HostLocal0000
+			}
+		}
+		if c.HasPort {
+			if req.Host == "" {
+				req.Host = HostLocalServer
+			} else {
+				req.Host = req.Host + ":" + port
+			}
+		}
+		req.URL.Host = req.Host
+	}
 }
 
 func (c *Context) CloneRequest() *http.Request {

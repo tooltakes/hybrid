@@ -11,7 +11,7 @@ const (
 	HostLocal0       = "0"
 
 	HostPing        = "P"
-	HostLocalServer = "0"
+	HostLocalServer = "0:0"
 
 	ClientAuthOK byte = 0xa1
 )

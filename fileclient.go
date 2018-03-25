@@ -93,7 +93,7 @@ func (r *FileClient) Do(c *Context) {
 			if q := req.URL.RawQuery; q != "" {
 				newPath += "?" + q
 			}
-			newPath += "\r\n\r\n"
+			newPath += "\r\n"
 			c.Writer.Write(append(Standard301Prefix, []byte(newPath)...))
 			return
 		}

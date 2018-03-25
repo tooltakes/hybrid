@@ -1,10 +1,8 @@
 package hybrid
 
 import (
-	"fmt"
 	"net"
 	"net/http"
-	"strings"
 )
 
 type Hybrid struct {
@@ -39,26 +37,6 @@ func (h *Hybrid) Proxy(conn net.Conn) {
 			conn.Write([]byte("HTTP/1.1 404 Hybrid Not Found\r\n\r\n"))
 			return
 		}
-
-		// http://abcb.hybrid:80/192.168.22.22/a.html => http://192.168.22.22:80/a.html from server
-		req := c.Request
-		path := req.URL.Path
-		if path[0] == '/' {
-			path = path[1:]
-		}
-		s := strings.IndexByte(path, '/')
-		// req.Host => authority|target
-		switch path[:s] {
-		case HostLocal0, HostLocalhost, HostLocal127, HostLocal0000:
-			if c.Port == "0" {
-				req.Host = HostLocalServer
-			} else {
-				req.Host = fmt.Sprintf("%s:%s", HostLocalServer, c.Port)
-			}
-		default:
-			req.Host = fmt.Sprintf("%s:%s", path[:s], c.Port)
-		}
-		req.URL.Path = path[s:]
 		p.Do(c)
 		return
 	}
@@ -68,8 +46,6 @@ func (h *Hybrid) Proxy(conn net.Conn) {
 			continue
 		}
 
-		// //NEXT //DIRECT tcp://127.0.0.1:9999, tox://area1,
-		// ?http://127.0.0.1:8899, ?file://./ant
 		proxy := rc.Route(c)
 		if proxy == nil {
 			continue
