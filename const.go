@@ -19,4 +19,6 @@ const (
 var (
 	StandardConnectOK               = []byte("HTTP/1.1 200 OK\r\n\r\n")
 	StandardLocalServiceUnaviliable = []byte("HTTP/1.1 503 Local Service Unaviliable\r\n\r\n")
+	Standard301Prefix               = []byte("HTTP/1.1 301 Moved Permanently\r\nLocation: ")
+	Standard502LocalCDN             = []byte("HTTP/1.1 502 LocalCDN\r\n\r\n")
 )

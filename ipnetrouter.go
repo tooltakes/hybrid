@@ -10,6 +10,7 @@ type IPNetRouter struct {
 	IPs  []net.IP
 	Nets []*net.IPNet
 
+	// FileClient test Matched host file, then proxy it if test ok.
 	FileClient *FileClient
 
 	Matched   Proxy

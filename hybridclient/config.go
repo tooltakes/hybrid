@@ -28,13 +28,16 @@ type ToxServer struct {
 }
 
 type FileServer struct {
-	Name    string `validate:"omitempty,hostname"`
-	DirName string `validate:"hostname"`
+	Name     string `validate:"omitempty,hostname"`
+	DirName  string `validate:"hostname"`
+	Redirect map[string]string
+	Dev      bool
 }
 
 type HttpProxyServer struct {
-	Name string `validate:"omitempty,hostname"`
-	Host string `validate:"tcp_addr"`
+	Name      string `validate:"omitempty,hostname"`
+	Host      string `validate:"tcp_addr"`
+	KeepAlive bool
 }
 
 // server types end
@@ -47,6 +50,7 @@ type AdpRouter struct {
 	Blocked             string `validate:"omitempty,hostname"`
 	Unblocked           string `validate:"omitempty,hostname,nefield=Blocked"`
 	EtcHostsIPAsBlocked bool
+	Dev                 bool
 }
 
 type IPNetRouter struct {

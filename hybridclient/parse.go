@@ -111,6 +111,7 @@ func (c *Client) newAdpRouter(name string, raw *AdpRouter) (*hybrid.AdpRouter, e
 		Log:                 c.log,
 		Disabled:            c.routerDisabled[name],
 		EtcHostsIPAsBlocked: raw.EtcHostsIPAsBlocked,
+		Dev:                 raw.Dev,
 	}
 
 	if raw.Blocked != "" {

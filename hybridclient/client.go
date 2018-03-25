@@ -126,8 +126,10 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 		}
 		fs, err := hybrid.NewFileClient(hybrid.FileClientConfig{
 			Log:      log,
+			Dev:      s.Dev,
 			Disabled: c.fsDisabled[name],
 			DirPath:  filepath.Join(c.fileRootDir, s.DirName),
+			Redirect: s.Redirect,
 		})
 		if err != nil {
 			return nil, err
@@ -142,7 +144,7 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 		if name == "" {
 			name = strings.Replace(s.Host, ":", "-", -1)
 		}
-		c.proxies[name] = hybrid.NewExistProxy(s.Host)
+		c.proxies[name] = hybrid.NewExistProxy(s.Host, s.KeepAlive)
 	}
 
 	// tox

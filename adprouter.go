@@ -27,6 +27,7 @@ type AdpRouterConfig struct {
 	TxtRules  [][]byte
 
 	EtcHostsIPAsBlocked bool
+	Dev                 bool
 }
 
 type AdpRouter struct {
@@ -95,15 +96,19 @@ func (r *AdpRouter) init() error {
 	if added == 0 {
 		return ErrEmptyAdpRules
 	}
-	r.log.Info("AdpList rules loaded", zap.Int("total", added))
+	if r.config.Dev {
+		r.log.Info("AdpList rules loaded", zap.Int("total", added))
+	}
 
 	// init blockedIps only after adpMatcher
 	if r.config.EtcHostsIPAsBlocked {
 		hf, errs := hostess.LoadHostfile()
 		if errs != nil {
-			r.log.Debug("hosts errors")
-			for _, err := range errs {
-				r.log.Debug("hosts entry", zap.Error(err))
+			if r.config.Dev {
+				r.log.Debug("hosts errors")
+				for _, err := range errs {
+					r.log.Debug("hosts entry", zap.Error(err))
+				}
 			}
 		}
 

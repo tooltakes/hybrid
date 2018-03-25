@@ -11,8 +11,10 @@ import (
 
 type FileClientConfig struct {
 	Log      *zap.Logger
+	Dev      bool
 	Disabled bool
 	DirPath  string
+	Redirect map[string]string
 }
 
 type FileClient struct {
@@ -44,6 +46,13 @@ func NewFileClient(config FileClientConfig) (*FileClient, error) {
 		pathMap["/"] = true
 	}
 
+	if config.Dev {
+		dir := filepath.Base(config.DirPath)
+		for p, _ := range pathMap {
+			config.Log.Debug("PathMap", zap.String("dir", dir), zap.String("file", p))
+		}
+	}
+
 	return &FileClient{
 		log:          config.Log,
 		config:       config,
@@ -53,17 +62,42 @@ func NewFileClient(config FileClientConfig) (*FileClient, error) {
 }
 
 func (r *FileClient) Route(c *Context) Proxy {
-	if r == nil || c.Connect || !r.pathMap[c.Request.URL.Path] {
-		return nil
+	if r != nil && !c.Connect && r.pathMap[c.Request.URL.Path] {
+		if r.config.Dev {
+			r.log.Debug("Local Y", zap.String("host", c.Request.URL.Host), zap.String("path", c.Request.URL.Path))
+		}
+		return r
 	}
-	return r
+	if r != nil && r.config.Redirect != nil {
+		if _, ok := r.config.Redirect[c.Request.URL.Path]; ok {
+			r.log.Debug("Local R", zap.String("host", c.Request.URL.Host), zap.String("path", c.Request.URL.Path))
+			return r
+		}
+	}
+	if r.config.Dev {
+		r.log.Debug("Local N", zap.String("host", c.Request.URL.Host), zap.String("path", c.Request.URL.Path))
+	}
+	return nil
 }
 
 func (r *FileClient) Disabled() bool { return r == nil || r.config.Disabled }
 
 func (r *FileClient) Do(c *Context) {
-	r.log.Debug("Local CDN", zap.Stringer("url", c.Request.URL))
 	req := c.Request
+
+	if r.config.Redirect != nil {
+		newPath, ok := r.config.Redirect[c.Request.URL.Path]
+		if ok {
+			// localRedirect gives a Moved Permanently response.
+			// It does not convert relative paths to absolute paths like Redirect does.
+			if q := req.URL.RawQuery; q != "" {
+				newPath += "?" + q
+			}
+			newPath += "\r\n\r\n"
+			c.Writer.Write(append(Standard301Prefix, []byte(newPath)...))
+			return
+		}
+	}
 
 	// TODO another way to avoid fs.go redirect?
 	if req.URL.Path == "/index.html" {
@@ -75,7 +109,7 @@ func (r *FileClient) Do(c *Context) {
 	res, err := r.roundTripper.RoundTrip(req)
 	if err != nil {
 		r.log.Error("Failed to serve local CDN file", zap.Error(err), zap.Stringer("url", c.Request.URL))
-		c.Writer.Write([]byte("HTTP/1.1 502 LocalCDN\r\n\r\n"))
+		c.Writer.Write(Standard502LocalCDN)
 		return
 	}
 	err = res.Write(c.Writer)

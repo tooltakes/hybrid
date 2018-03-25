@@ -100,8 +100,14 @@ func (c *Context) CloneRequest() *http.Request {
 	return outreq
 }
 
-func (c *Context) ProxyUp(proxyaddr string) {
+func (c *Context) ProxyUp(proxyaddr string, keepAlive bool) {
 	req := c.Request
+	if keepAlive {
+		req.Header.Del("Connection")
+	} else {
+		req.Header.Set("Connection", "close")
+	}
+
 	remote, err := net.Dial("tcp", proxyaddr)
 	if err != nil {
 		c.Writer.Write([]byte("HTTP/1.1 502 ProxyUp Dail Fail\r\n\r\n"))
