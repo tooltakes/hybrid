@@ -1,3 +1,14 @@
+// visit client:
+// http://0.hybrid/index.html
+//
+// visit server:
+// http://server-name-in-hybrid-json.hybrid/index.html
+//
+// visit host from special server:
+// http://192.168.2.6.server-name-in-hybrid-json.hybrid/index.html
+//
+// ssh over hybrid example:
+// ssh root@192.168.1.1 -o "ProxyCommand=nc -n -Xconnect -x127.0.0.1:7777 %h.server-name-in-hybrid-json.hybrid %p"
 package main
 
 import (
