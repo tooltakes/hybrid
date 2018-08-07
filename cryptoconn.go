@@ -291,11 +291,7 @@ func NewCryptoServerConn(c net.Conn, config *CryptoConnServerConfig) (net.Conn, 
 	var err error
 	readScalar := func(s []byte) error {
 		_, err = io.ReadFull(randReader, s)
-		if err != nil {
-			return err
-		}
-		curve25519Secret(s)
-		return nil
+		return err
 	}
 
 	var tmp_client_pubkey0, tmp_shared_key0, server_pubkey [32]byte
@@ -544,11 +540,7 @@ func NewCryptoConn(c net.Conn, config *CryptoConnConfig) (net.Conn, error) {
 	var err error
 	readScalar := func(s []byte) error {
 		_, err = io.ReadFull(randReader, s)
-		if err != nil {
-			return err
-		}
-		curve25519Secret(s)
-		return nil
+		return err
 	}
 
 	//# ClientHello: length=292+n max_length=1024,max_n=732
@@ -738,10 +730,4 @@ func NewCryptoConn(c net.Conn, config *CryptoConnConfig) (net.Conn, error) {
 	w := newCryptoWriter(c, aead_c2s, c2sSeed, server_read_pubkey)
 
 	return &cryptoStreamConn{cryptoReader: r, cryptoWriter: w, c: c}, nil
-}
-
-func curve25519Secret(s []byte) {
-	s[0] &= 248
-	s[31] &= 127
-	s[31] |= 64
 }

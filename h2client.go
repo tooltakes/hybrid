@@ -230,7 +230,7 @@ func (h2 *H2Client) Proxy(c *Context, idx string) {
 	req = req.WithContext(ctx)
 	res, err := h2.tr.RoundTrip(req)
 	if err != nil {
-		h2.log.Error(c.HostPort, zap.Error(err))
+		h2.log.Warn(c.HostPort, zap.Error(err))
 		c.Writer.Write([]byte("HTTP/1.1 502 No Trip\r\n\r\n"))
 		return
 	}

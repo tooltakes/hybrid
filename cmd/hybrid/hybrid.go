@@ -31,7 +31,7 @@ func main() {
 	}
 	defer log.Sync()
 
-	config, err := hybridclient.LoadConfig()
+	config, err := hybridclient.LoadConfig(nil)
 	if err != nil {
 		log.Fatal("LoadConfig", zap.Error(err))
 	}
@@ -42,9 +42,14 @@ func main() {
 	}
 	defer client.StopAndKill()
 
-	err = client.BeforeRun()
+	err = client.InitListener()
 	if err != nil {
-		log.Fatal("BeforeRun", zap.Error(err))
+		log.Fatal("InitListener", zap.Error(err))
+	}
+
+	err = client.BootstrapTox()
+	if err != nil {
+		log.Fatal("BootstrapTox", zap.Error(err))
 	}
 
 	err = client.Run()

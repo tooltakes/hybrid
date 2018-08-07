@@ -62,13 +62,16 @@ func NewFileClient(config FileClientConfig) (*FileClient, error) {
 }
 
 func (r *FileClient) Route(c *Context) Proxy {
-	if r != nil && !c.Connect && r.pathMap[c.Request.URL.Path] {
+	if r == nil {
+		return nil
+	}
+	if !c.Connect && r.pathMap[c.Request.URL.Path] {
 		if r.config.Dev {
 			r.log.Debug("Local Y", zap.String("host", c.Request.URL.Host), zap.String("path", c.Request.URL.Path))
 		}
 		return r
 	}
-	if r != nil && r.config.Redirect != nil {
+	if r.config.Redirect != nil {
 		if _, ok := r.config.Redirect[c.Request.URL.Path]; ok {
 			r.log.Debug("Local R", zap.String("host", c.Request.URL.Host), zap.String("path", c.Request.URL.Path))
 			return r

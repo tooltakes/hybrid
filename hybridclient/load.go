@@ -10,8 +10,10 @@ import (
 	validator "gopkg.in/go-playground/validator.v9"
 )
 
-func LoadConfig() (*Config, error) {
-	c := new(Config)
+func LoadConfig(c *Config) (*Config, error) {
+	if c == nil {
+		c = new(Config)
+	}
 	err := env.Parse(c)
 	if err != nil {
 		return nil, err

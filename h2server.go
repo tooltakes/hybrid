@@ -61,7 +61,7 @@ func (s *H2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isConnect := r.Method == "CONNECT"
+	isConnect := r.Method == http.MethodConnect
 	r.Proto = "HTTP/1.1"
 	r.ProtoMajor = 1
 	r.ProtoMinor = 1

@@ -230,8 +230,7 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 	return &c, nil
 }
 
-// BeforeRun
-func (c *Client) BeforeRun() error {
+func (c *Client) InitListener() error {
 	if c.listener == nil {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", c.config.Expose))
 		if err != nil {
@@ -240,7 +239,10 @@ func (c *Client) BeforeRun() error {
 		}
 		c.listener = ln
 	}
+	return nil
+}
 
+func (c *Client) BootstrapTox() error {
 	if c.tox != nil {
 		result := c.tox.BootstrapNodes_l(c.toxNodes)
 		if result.Error() != nil {
@@ -248,7 +250,6 @@ func (c *Client) BeforeRun() error {
 			return result.Error()
 		}
 	}
-
 	return nil
 }
 
