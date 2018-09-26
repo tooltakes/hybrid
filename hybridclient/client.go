@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,6 +33,8 @@ type Client struct {
 }
 
 func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Client, error) {
+	t := NewConfigTree(config.BaseDir)
+
 	c := Client{
 		log:      log,
 		config:   config,
@@ -44,8 +45,8 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 		fileClients:    make(map[string]*hybrid.FileClient, len(config.FileServers)),
 		fsDisabled:     parseEnvList("HYBRID_FILE_SERVERS_DISABLED"),
 		routerDisabled: parseEnvList("HYBRID_ROUTER_DISABLED"),
-		fileRootDir:    os.ExpandEnv(config.FileRootDir),
-		ruleRootDir:    os.ExpandEnv(config.RuleRootDir),
+		fileRootDir:    t.FilesRootPath,
+		ruleRootDir:    t.RulesRootPath,
 		token:          []byte(config.Token),
 	}
 
@@ -122,13 +123,13 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 	for _, s := range config.FileServers {
 		name := s.Name
 		if name == "" {
-			name = s.DirName
+			name = s.RootZipName
 		}
 		fs, err := hybrid.NewFileClient(hybrid.FileClientConfig{
 			Log:      log,
 			Dev:      s.Dev,
 			Disabled: c.fsDisabled[name],
-			DirPath:  filepath.Join(c.fileRootDir, s.DirName),
+			RootZip:  filepath.Join(c.fileRootDir, s.RootZipName),
 			Redirect: s.Redirect,
 		})
 		if err != nil {
@@ -272,6 +273,10 @@ func (c *Client) StopAndKill() {
 		c.listener.Close()
 	} else if c.tox != nil {
 		c.tox.Kill()
+	}
+
+	for _, fc := range c.fileClients {
+		fc.Close()
 	}
 }
 

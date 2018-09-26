@@ -97,11 +97,11 @@ func parseEnvList(name string) map[string]bool {
 }
 
 func (c *Client) newRouter(raw RouterItem) (hybrid.Router, error) {
-	if raw.AdpRouter != nil && raw.IPNetRouter == nil {
-		return c.newAdpRouter(raw.Name, raw.AdpRouter)
+	if raw.Adp != nil && raw.IPNet == nil {
+		return c.newAdpRouter(raw.Name, raw.Adp)
 	}
-	if raw.AdpRouter == nil && raw.IPNetRouter != nil {
-		return c.newNetRouter(raw.Name, raw.IPNetRouter)
+	if raw.Adp == nil && raw.IPNet != nil {
+		return c.newNetRouter(raw.Name, raw.IPNet)
 	}
 	return nil, fmt.Errorf("one and only one router can be set in RouterItem(%s)", raw.Name)
 }

@@ -242,7 +242,7 @@ func (h2 *H2Client) Proxy(c *Context, idx string) {
 			return
 		}
 		c.Writer.Write(StandardConnectOK)
-		io.Copy(c.Writer, res.Body)
+		Copy(c.Writer, res.Body)
 	} else {
 		res.Close = true
 		res.Write(c.Writer)

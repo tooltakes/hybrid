@@ -1,10 +1,8 @@
 // reserved names: DIRECT localhost 127.0.0.1 0.0.0.0 0
 // env:
-// HYBRID_CONFIG=$HOME/.hybrid/hybrid.json
+// HYBRID_CONFIG_PARENT=$HOME
 // HYBRID_DEV=false
 // HYBRID_EXPOSE=7777
-// HYBRID_FILES_ROOT=$HOME/.hybrid/files-root
-// HYBRID_RULES_ROOT=$HOME/.hybrid/rules-root
 // HYBRID_FILE_SERVERS_DISABLED=a,b,c
 // HYBRID_ROUTER_DISABLED=a,b,c
 package hybridclient
@@ -28,10 +26,10 @@ type ToxServer struct {
 }
 
 type FileServer struct {
-	Name     string `validate:"omitempty,hostname"`
-	DirName  string `validate:"hostname"`
-	Redirect map[string]string
-	Dev      bool
+	Name        string `validate:"omitempty,hostname"`
+	RootZipName string `validate:"hostname"`
+	Redirect    map[string]string
+	Dev         bool
 }
 
 type HttpProxyServer struct {
@@ -66,8 +64,8 @@ type IPNetRouter struct {
 type RouterItem struct {
 	Name string `validate:"omitempty,hostname"`
 	// router
-	AdpRouter   *AdpRouter
-	IPNetRouter *IPNetRouter
+	Adp   *AdpRouter
+	IPNet *IPNetRouter
 }
 
 type ToxNode struct {
@@ -78,13 +76,12 @@ type ToxNode struct {
 }
 
 type Config struct {
-	Schema string `json:"-" yaml:"-" toml:"-"`
+	Schema  string `json:"-" yaml:"-" toml:"-"`
+	BaseDir string `env:"HYBRID_CONFIG_BSAE_DIR" validate:"required" default:"$HOME" json:"-" yaml:"-" toml:"-"`
 
-	Config      string `env:"HYBRID_CONFIG"     validate:"required" default:"$HOME/.hybrid/hybrid.json" json:"-" yaml:"-" toml:"-"`
-	Dev         bool   `env:"HYBRID_DEV"`
-	Expose      uint16 `env:"HYBRID_EXPOSE"     validate:"gt=0"     default:"7777"`
-	FileRootDir string `env:"HYBRID_FILES_ROOT" validate:"required" default:"$HOME/.hybrid/files-root"`
-	RuleRootDir string `env:"HYBRID_RULES_ROOT" validate:"required" default:"$HOME/.hybrid/rules-root"`
+	Version string
+	Dev     bool   `env:"HYBRID_DEV"`
+	Expose  uint16 `env:"HYBRID_EXPOSE"        validate:"gt=0"     default:"7777"`
 
 	ScalarHex string `validate:"len=64,hexadecimal"`
 	ToxNospam uint32 `validate:"required"`

@@ -18,6 +18,8 @@ type H2Server struct {
 	ReverseProxy *httputil.ReverseProxy
 
 	LocalHandler http.Handler
+
+	Pool httputil.BufferPool
 }
 
 func (s *H2Server) Serve(listener net.Listener) error {
@@ -27,6 +29,10 @@ func (s *H2Server) Serve(listener net.Listener) error {
 
 	if s.ReverseProxy.FlushInterval == 0 {
 		s.ReverseProxy.FlushInterval = 250 * time.Millisecond
+	}
+
+	if s.Pool == nil {
+		s.Pool = DefaultBufferPool
 	}
 
 	return SimpleListenAndServe(listener, func(c net.Conn) {
@@ -99,17 +105,24 @@ func (s *H2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// for copy
-	// if happens at the start of req, will wait at most 0.5s
-	// if happens at the end of req, will wait at most 1s
-	tr := &TimeoutReader{
+	// if happens at the start of req, will wait at most 250ms
+	// if happens at the end of req, will wait at most 500ms
+	wto := &TimeoutWriterTo{
 		Conn:         remote,
-		Timeout:      time.Second / 2,
-		TimeoutSleep: time.Second / 2,
+		Timeout:      time.Second / 4,
+		TimeoutSleep: time.Second / 4,
 	}
 	w.WriteHeader(http.StatusOK)
 	w.(http.Flusher).Flush()
-	go io.Copy(remote, r.Body)
-	io.Copy(w, tr)
+	go func() {
+		buf := s.Pool.Get()
+		defer s.Pool.Put(buf)
+		io.CopyBuffer(remote, r.Body, buf)
+	}()
+
+	buf := s.Pool.Get()
+	defer s.Pool.Put(buf)
+	wto.WriteTo(w, buf)
 }
 
 func SimpleListenAndServe(listener net.Listener, serveConn func(c net.Conn)) error {

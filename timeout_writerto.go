@@ -7,23 +7,19 @@ import (
 	"time"
 )
 
-type TimeoutReader struct {
+type TimeoutWriterTo struct {
 	Conn         net.Conn
 	Timeout      time.Duration
 	TimeoutSleep time.Duration
 }
 
-func (r *TimeoutReader) Read(buf []byte) (n int, err error) {
-	r.Conn.SetReadDeadline(time.Now().Add(r.Timeout))
-	n, err = r.Conn.Read(buf)
-	return
-}
-
-func (r *TimeoutReader) WriteTo(dst io.Writer) (written int64, err error) {
+func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte) (written int64, err error) {
 	src := r.Conn
 	sleep := r.TimeoutSleep
-	buf := make([]byte, 32<<10)
-	var flush func()
+	if buf == nil {
+		buf = make([]byte, 32<<10)
+	}
+	var flush = func() {}
 	if flusher, ok := dst.(http.Flusher); ok {
 		flush = flusher.Flush
 	}
@@ -39,9 +35,7 @@ func (r *TimeoutReader) WriteTo(dst io.Writer) (written int64, err error) {
 			i = 0
 			nw, ew := dst.Write(buf[0:nr])
 			if nw > 0 {
-				if flush != nil {
-					flush()
-				}
+				flush()
 				written += int64(nw)
 			}
 			if ew != nil {

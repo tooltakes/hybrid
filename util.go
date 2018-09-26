@@ -21,7 +21,7 @@ func checkRequestEnd(w *io.PipeWriter, c io.Reader, h2FrameSize int) {
 		return
 	}
 	defer req.Body.Close()
-	_, err = io.Copy(ioutil.Discard, req.Body)
+	_, err = Copy(ioutil.Discard, req.Body)
 	w.CloseWithError(err)
 }
 

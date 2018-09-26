@@ -172,10 +172,10 @@ func (c *Context) ProxyUp(proxyaddr string, keepAlive bool) {
 	}
 
 	go func() {
-		io.Copy(remote, req.Body)
+		Copy(remote, req.Body)
 		remote.Close()
 	}()
-	io.Copy(c.Writer, remote)
+	Copy(c.Writer, remote)
 }
 
 func (c *Context) Direct() {
@@ -191,10 +191,10 @@ func (c *Context) Direct() {
 		c.Writer.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
 		go func() {
 			// NoBody for CONNECT
-			io.Copy(remote, c.UnsafeReader)
+			Copy(remote, c.UnsafeReader)
 			remote.Close()
 		}()
-		io.Copy(c.Writer, remote)
+		Copy(c.Writer, remote)
 		return
 	}
 
@@ -220,10 +220,10 @@ func (c *Context) Direct() {
 		req.Body = ioutil.NopCloser(c.UnsafeReader)
 	}
 	go func() {
-		io.Copy(remote, req.Body)
+		Copy(remote, req.Body)
 		remote.Close()
 	}()
 	// TODO modify stream to set Connection: close
-	io.Copy(c.Writer, remote)
+	Copy(c.Writer, remote)
 	return
 }

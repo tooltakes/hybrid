@@ -1,11 +1,10 @@
 package hybrid
 
 import (
+	"io"
 	"io/ioutil"
-	"net/http"
-	"os"
-	"path/filepath"
 
+	"github.com/empirefox/hybrid/hybridzipfs"
 	"go.uber.org/zap"
 )
 
@@ -13,51 +12,29 @@ type FileClientConfig struct {
 	Log      *zap.Logger
 	Dev      bool
 	Disabled bool
-	DirPath  string
+	RootZip  string
 	Redirect map[string]string
 }
 
 type FileClient struct {
-	log          *zap.Logger
-	config       FileClientConfig
-	roundTripper http.RoundTripper
-	pathMap      map[string]bool
+	log    *zap.Logger
+	config FileClientConfig
+	hfs    *hybridzipfs.GzipHttpfs
+	io.Closer
 }
 
 func NewFileClient(config FileClientConfig) (*FileClient, error) {
-	pathMap := make(map[string]bool)
-	dirPathSize := len(config.DirPath)
-	err := filepath.Walk(config.DirPath+"/", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			config.Log.Error("walk dir failed", zap.Error(err), zap.String("path", path))
-			return err
-		}
-		if !info.IsDir() {
-			pathMap[path[dirPathSize:]] = true
-		}
-		return nil
-	})
+	hfs, closer, err := hybridzipfs.New(config.RootZip)
 	if err != nil {
-		config.Log.Error("walk dir failed", zap.Error(err))
+		config.Log.Error("hybridzipfs.New", zap.String("RootZip", config.RootZip), zap.Error(err))
 		return nil, err
 	}
 
-	if pathMap["/index.html"] {
-		pathMap["/"] = true
-	}
-
-	if config.Dev {
-		dir := filepath.Base(config.DirPath)
-		for p, _ := range pathMap {
-			config.Log.Debug("PathMap", zap.String("dir", dir), zap.String("file", p))
-		}
-	}
-
 	return &FileClient{
-		log:          config.Log,
-		config:       config,
-		roundTripper: http.NewFileTransport(http.Dir(config.DirPath)),
-		pathMap:      pathMap,
+		log:    config.Log,
+		config: config,
+		hfs:    hfs,
+		Closer: closer,
 	}, nil
 }
 
@@ -65,7 +42,7 @@ func (r *FileClient) Route(c *Context) Proxy {
 	if r == nil {
 		return nil
 	}
-	if !c.Connect && r.pathMap[c.Request.URL.Path] {
+	if !c.Connect && r.hfs.CanRequest(c.Request.URL.Path) {
 		if r.config.Dev {
 			r.log.Debug("Local Y", zap.String("host", c.Request.URL.Host), zap.String("path", c.Request.URL.Path))
 		}
@@ -109,7 +86,7 @@ func (r *FileClient) Do(c *Context) {
 	if req.Body != nil {
 		req.Body = ioutil.NopCloser(req.Body)
 	}
-	res, err := r.roundTripper.RoundTrip(req)
+	res, err := r.hfs.RoundTrip(req)
 	if err != nil {
 		r.log.Error("Failed to serve local CDN file", zap.Error(err), zap.Stringer("url", c.Request.URL))
 		c.Writer.Write(Standard502LocalCDN)
