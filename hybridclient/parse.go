@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/empirefox/hybrid"
+	"github.com/empirefox/hybrid/hybridutils"
 	"go.uber.org/zap"
 )
 
@@ -42,47 +42,19 @@ func newTcpServer(raw TcpServer, token []byte) (*tcpServer, error) {
 
 	if !s.NoTLS {
 		if raw.ClientScalarHex != "" {
-			scalar, err := tox.DecodeSecret(raw.ClientScalarHex)
+			scalar, err := hybridutils.DecodeKey32(raw.ClientScalarHex)
 			if err != nil {
 				return nil, err
 			}
 			s.ClientScalar = scalar
 		}
-		pubkey, err := tox.DecodePubkey(raw.ServerPublicHex)
+		pubkey, err := hybridutils.DecodeKey32(raw.ServerPublicHex)
 		if err != nil {
 			return nil, err
 		}
 		s.ServerPubkey = pubkey
 	}
 
-	return &s, nil
-}
-
-type toxServer struct {
-	Name    string
-	Address *[38]byte
-	Token   []byte
-}
-
-func newToxServer(raw ToxServer, token []byte) (*toxServer, error) {
-	address, err := tox.DecodeAddress(raw.AddressHex)
-	if err != nil {
-		return nil, err
-	}
-
-	name := raw.Name
-	if name == "" {
-		name = raw.AddressHex[:8]
-	}
-
-	s := toxServer{
-		Name:    name,
-		Address: address,
-		Token:   []byte(raw.Token),
-	}
-	if len(s.Token) == 0 {
-		s.Token = token
-	}
 	return &s, nil
 }
 

@@ -11,9 +11,9 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/crypto/curve25519"
 
-	tox "github.com/TokTok/go-toxcore-c"
 	"github.com/empirefox/hybrid"
 	"github.com/empirefox/hybrid/hybridauth"
+	"github.com/empirefox/hybrid/hybridutils"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 		log.Fatal("Post must be set")
 	}
 
-	scalar, err := tox.DecodeSecret(c.ScalarHex)
+	scalar, err := hybridutils.DecodeKey32(c.ScalarHex)
 	if err != nil {
 		log.Fatal("DecodeSecret", zap.Error(err))
 	}
@@ -40,7 +40,7 @@ func main() {
 	var pubkey [32]byte
 	curve25519.ScalarBaseMult(&pubkey, scalar)
 
-	verifyKey, err := tox.DecodePubkey(c.VerifyKeyHex)
+	verifyKey, err := hybridutils.DecodeKey32(c.VerifyKeyHex)
 	if err != nil {
 		log.Fatal("Parse verifyKey", zap.Error(err))
 	}

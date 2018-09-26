@@ -19,12 +19,6 @@ type TcpServer struct {
 	Token           string `validate:"lte=732"`
 }
 
-type ToxServer struct {
-	Name       string `validate:"omitempty,hostname"`
-	AddressHex string `validate:"len=76,hexadecimal"`
-	Token      string `validate:"lte=732"`
-}
-
 type FileServer struct {
 	Name        string `validate:"omitempty,hostname"`
 	RootZipName string `validate:"hostname"`
@@ -68,13 +62,6 @@ type RouterItem struct {
 	IPNet *IPNetRouter
 }
 
-type ToxNode struct {
-	Addr    string `validate:"hostname"`
-	Port    uint16 `validate:"required"`
-	TcpPort uint16
-	Pubkey  string `validate:"len=64,hexadecimal"`
-}
-
 type Config struct {
 	Schema  string `json:"-" yaml:"-" toml:"-"`
 	BaseDir string `env:"HYBRID_CONFIG_BSAE_DIR" validate:"required" default:"$HOME" json:"-" yaml:"-" toml:"-"`
@@ -88,11 +75,8 @@ type Config struct {
 	Token     string `validate:"required,lte=732"`
 
 	TcpServers       []TcpServer
-	ToxServers       []ToxServer
 	FileServers      []FileServer
 	HttpProxyServers []HttpProxyServer
 
 	Routers []RouterItem
-
-	ToxNodes []ToxNode
 }

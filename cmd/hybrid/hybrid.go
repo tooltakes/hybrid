@@ -47,11 +47,6 @@ func main() {
 		log.Fatal("InitListener", zap.Error(err))
 	}
 
-	err = client.BootstrapTox()
-	if err != nil {
-		log.Fatal("BootstrapTox", zap.Error(err))
-	}
-
 	err = client.Run()
 	if err != nil {
 		log.Fatal("Run", zap.Error(err))
