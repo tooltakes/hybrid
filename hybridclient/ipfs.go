@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
-	"time"
 
 	"github.com/empirefox/hybrid"
 	"github.com/empirefox/hybrid/hybridipfs"
