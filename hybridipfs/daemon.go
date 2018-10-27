@@ -5,25 +5,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"golang.org/x/net/context"
 
-	"github.com/ipfs/go-ipfs/plugin/loader"
 	oldcmds "github.com/ipsn/go-ipfs/commands"
 	"github.com/ipsn/go-ipfs/core"
-	core "github.com/ipsn/go-ipfs/core"
-	"github.com/ipsn/go-ipfs/core/corehttp"
-	corehttp "github.com/ipsn/go-ipfs/core/corehttp"
+	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"
 	"github.com/ipsn/go-ipfs/core/corerepo"
-	corerepo "github.com/ipsn/go-ipfs/core/corerepo"
-	fsrepo "github.com/ipsn/go-ipfs/repo/fsrepo"
-	"github.com/qiniu/log"
+	"github.com/ipsn/go-ipfs/plugin/loader"
+	"github.com/ipsn/go-ipfs/repo/fsrepo"
 
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
+	config "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
+	logging "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log"
 	ma "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr"
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr-net"
 )
 
 const (
@@ -34,91 +29,101 @@ const (
 
 var (
 	// ErrIsOffline is returned when an online operation was done offline.
-	ErrIsOffline = errors.New("Node is offline")
-	ErrIsOnline  = errors.New("Node is online")
+	ErrIsOffline        = errors.New("Ipfs is offline")
+	ErrIsOnline         = errors.New("Ipfs is online")
+	ErrProtocolListened = errors.New("Protocol already listened")
 )
 
-type DaemonOptions struct {
+var log = logging.Logger("hybridipfs")
+
+type StateChangedFunc func(stateLocked *core.IpfsNode)
+
+type Config struct {
+	FakeApiListenAddr ma.Multiaddr
+	GatewayListenAddr ma.Multiaddr
+	ExcludeIPNS       func(host string) bool
+
 	RepoPath         string
-	Profile          string
+	Profile          []string // optional
 	AutoMigrate      bool
 	EnableIPNSPubSub bool
 	EnableFloodSub   bool
 	EnableMultiplex  bool
 }
 
-// Node remembers the settings needed for accessing the ipfs daemon.
-type Node struct {
-	DaemonOptions DaemonOptions
+// Ipfs remembers the settings needed for accessing the ipfs daemon.
+type Ipfs struct {
+	config Config
+	ctx    context.Context
 
-	ctx           context.Context
-	apiListenAddr ma.Multiaddr
-	apiDialAddr   ma.Multiaddr
-
-	mu        sync.Mutex
-	ipfsNode  *core.IpfsNode
-	apiDialer Dialer
-	cancel    context.CancelFunc
+	mu             sync.Mutex
+	ipfsNode       *core.IpfsNode
+	api            coreiface.CoreAPI
+	apiServer      HttpServer
+	gatewayServer  HttpServer
+	listeners      map[string]*Listener
+	onConnected    StateChangedFunc
+	onDisconnected StateChangedFunc
+	cancel         context.CancelFunc
 }
 
-func NewNode(ctx context.Context, apiListenAddr, apiDialAddr ma.Multiaddr, opts DaemonOptions) (*Node, error) {
-	if opts.RepoPath == "" {
+func NewIpfs(ctx context.Context, c *Config) (*Ipfs, error) {
+	if c.RepoPath == "" {
 		repoPath, err := fsrepo.BestKnownPath()
 		if err != nil {
 			return nil, err
 		}
-		opts.RepoPath = repoPath
+		c.RepoPath = repoPath
 	}
 
-	err = CheckPlugins(opts.RepoPath)
+	err := CheckPlugins(c.RepoPath)
 	if err != nil {
 		return nil, err
 	}
 
-	ipfsNode, err := createOfflineNode(ctx, opts.RepoPath)
+	ipfsNode, err := createOfflineNode(ctx, c)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Node{
-		DaemonOptions: DaemonOptions,
+	hi := &Ipfs{
+		config: *c,
+		ctx:    ctx,
 
-		ctx:           ctx,
-		apiListenAddr: apiListenAddr,
-		apiDialAddr:   apiDialAddr,
-
-		ipfsNode: ipfsNode,
-	}, nil
+		ipfsNode:  ipfsNode,
+		listeners: make(map[string]*Listener),
+	}
+	hi.apiServer.SetOffline(nil)
+	hi.gatewayServer.SetOffline(nil)
+	return hi, nil
 }
 
-func (nd *Node) IsOnline() bool {
-	nd.mu.Lock()
-	defer nd.mu.Unlock()
+func (hi *Ipfs) IsOnline() bool {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
 
-	return nd.isOnline()
+	return hi.isOnline()
 }
 
-func (nd *Node) isOnline() bool {
-	return nd.ipfsNode.OnlineMode()
+func (hi *Ipfs) isOnline() bool {
+	return hi.ipfsNode.OnlineMode()
 }
 
-func (nd *Node) Connect() error {
-	nd.mu.Lock()
-	defer nd.mu.Unlock()
+func (hi *Ipfs) Connect() error {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
 
-	if nd.isOnline() {
+	if hi.isOnline() {
 		return nil
 	}
 
-	cctx := newCctx(nd.DaemonOptions.RepoPath)
-	ln, apiDialer := NewListenDialer(nd.apiListenAddr, nd.apiDialAddr)
+	cctx := newCctx(hi.config.RepoPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	var onErr = func() {
 		cancel()
-		ln.Close()
 		cctx.Close()
 	}
-	errc, err := startDaemon(ctx, cctx, ln, &nd.DaemonOptions)
+	err := startDaemon(ctx, cctx, &hi.config)
 	if err != nil {
 		onErr()
 		return err
@@ -130,31 +135,73 @@ func (nd *Node) Connect() error {
 		return err
 	}
 
-	if nd.ipfsNode != nil {
-		nd.ipfsNode.Close()
+	api, err := cctx.GetApi()
+	if err != nil {
+		onErr()
+		return err
 	}
-	nd.ipfsNode = ipfsNode
-	nd.apiDialer = apiDialer
-	nd.cancel = cancel
+
+	handler, err := newApiHandler(ipfsNode, cctx, &hi.config)
+	hi.apiServer.SetOnline(handler, err)
+	if err != nil {
+		return err
+	}
+
+	handler, err = newGatewayHandler(ipfsNode, cctx, &hi.config)
+	hi.gatewayServer.SetOnline(handler, err)
+	if err != nil {
+		return err
+	}
+
+	if hi.ipfsNode != nil {
+		hi.ipfsNode.Close()
+	}
+	hi.ipfsNode = ipfsNode
+	hi.api = api
+	hi.cancel = cancel
+
+	// server behavior
+	for _, ln := range hi.listeners {
+		hi.setStreamHandlerToDaemonHost(ln)
+	}
+
+	if hi.onConnected != nil {
+		hi.onConnected(ipfsNode)
+	}
 	return nil
 }
 
-func (nd *Node) Disconnect() (err error) {
-	nd.mu.Lock()
-	defer nd.mu.Unlock()
+func (hi *Ipfs) Disconnect() (err error) {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
 
-	if !nd.isOnline() {
+	if !hi.isOnline() {
 		return ErrIsOffline
 	}
 
-	nd.cancel()
-	nd.ipfsNode.Close()
-	nd.ipfsNode, err = createOfflineNode(nd.ctx, nd.DaemonOptions.RepoPath)
+	hi.cancel()
+	hi.ipfsNode.Close()
+	hi.ipfsNode, err = createOfflineNode(hi.ctx, &hi.config)
+	hi.apiServer.SetOffline(err)
+	hi.gatewayServer.SetOffline(err)
+
+	if hi.onDisconnected != nil {
+		hi.onDisconnected(hi.ipfsNode)
+	}
 	return
 }
 
-func (nd *Node) Name() string {
-	return "ipfs"
+func (hi *Ipfs) Connected(onConnected StateChangedFunc) {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
+	hi.onConnected = onConnected
+}
+
+// Disconnected ipfsNode maybe nil
+func (hi *Ipfs) Disconnected(onDisconnected StateChangedFunc) {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
+	hi.onDisconnected = onDisconnected
 }
 
 func CheckPlugins(repoPath string) error {
@@ -165,8 +212,8 @@ func CheckPlugins(repoPath string) error {
 	}
 	if ok {
 		pluginpath := filepath.Join(repoPath, "plugins")
-		if _, err := loader.LoadPlugins(pluginpath); err != nil {
-			log.Error("error loading plugins: ", err)
+		if _, err = loader.LoadPlugins(pluginpath); err != nil {
+			return err
 		}
 	}
 
@@ -187,8 +234,8 @@ func checkPermissions(path string) (bool, error) {
 	return true, nil
 }
 
-func createOfflineNode(ctx context.Context, repoPath string) (*core.IpfsNode, error) {
-	repo, err := InitDefaultOrMigrateRepoIfNeeded(repoPath, "")
+func createOfflineNode(ctx context.Context, c *Config) (*core.IpfsNode, error) {
+	repo, err := InitDefaultOrMigrateRepoIfNeeded(c)
 	if err != nil {
 		return nil, err
 	}
@@ -214,15 +261,15 @@ func newCctx(repoPath string) *oldcmds.Context {
 	}
 }
 
-func startDaemon(ctx context.Context, cctx *oldcmds.Context, ln manet.Listener, opts *DaemonOptions) (<-chan error, error) {
-	repo, err := InitDefaultOrMigrateRepoIfNeeded(cctx.ConfigRoot, opts.Profile)
+func startDaemon(ctx context.Context, cctx *oldcmds.Context, c *Config) error {
+	repo, err := InitDefaultOrMigrateRepoIfNeeded(c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	cfg, err := cctx.GetConfig()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Start assembling node config
@@ -232,9 +279,9 @@ func startDaemon(ctx context.Context, cctx *oldcmds.Context, ln manet.Listener, 
 		Online:                      true,
 		DisableEncryptedConnections: false,
 		ExtraOpts: map[string]bool{
-			"pubsub": opts.EnableFloodSub,
-			"ipnsps": opts.EnableIPNSPubSub,
-			"mplex":  opts.EnableMultiplex,
+			"pubsub": c.EnableFloodSub,
+			"ipnsps": c.EnableIPNSPubSub,
+			"mplex":  c.EnableMultiplex,
 		},
 		//TODO(Kubuxu): refactor Online vs Offline by adding Permanent vs Ephemeral
 	}
@@ -247,143 +294,29 @@ func startDaemon(ctx context.Context, cctx *oldcmds.Context, ln manet.Listener, 
 	case routingOptionNoneKwd:
 		ncfg.Routing = core.NilRouterOption
 	default:
-		return nil, fmt.Errorf("unrecognized routing option: %s", routingOption)
+		return fmt.Errorf("unrecognized routing option: %s", cfg.Routing.Type)
 	}
 
 	node, err := core.NewNode(ctx, ncfg)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	node.SetLocal(false)
 	cctx.ConstructNode = func() (*core.IpfsNode, error) { return node, nil }
 
-	// construct api endpoint - every time
-	apiErrc, err := serveHTTPApi(node, cctx, cfg, ln)
-	if err != nil {
-		node.Close()
-		return nil, err
-	}
-
-	// construct http gateway - if it is set in the config
-	var gwErrc <-chan error
-	if len(cfg.Addresses.Gateway) > 0 {
-		var err error
-		gwErrc, err = serveHTTPGateway(node, cctx, cfg)
-		if err != nil {
-			node.Close()
-			return nil, err
-		}
-	}
-
-	gcErrc := startGC(ctx, node, cfg)
-	merged := merge(apiErrc, gwErrc, gcErrc)
-	return oneFromMerged(merged), nil
+	startGC(ctx, node, cfg)
+	return nil
 }
 
-func serveHTTPApi(node *core.IpfsNode, cctx *oldcmds.Context, cfg *config.Config, ln manet.Listener) (<-chan error, error) {
-	var opts = []corehttp.ServeOption{
-		corehttp.CommandsOption(*cctx),
-		corehttp.WebUIOption,
-		corehttp.GatewayOption(true, "/ipfs", "/ipns"),
-		corehttp.LogOption(),
-	}
-	if len(cfg.Gateway.RootRedirect) > 0 {
-		opts = append(opts, corehttp.RedirectOption("", cfg.Gateway.RootRedirect))
-	}
-
-	errc := make(chan error)
-	go func() {
-		errc <- corehttp.Serve(node, manet.NetListener(ln), opts...)
-		close(errc)
-	}()
-	return errc, nil
-}
-
-func serveHTTPGateway(node *core.IpfsNode, cctx *oldcmds.Context, cfg *config.Config) (<-chan error, error) {
-	gatewayMaddr, err := ma.NewMultiaddr(cfg.Addresses.Gateway)
-	if err != nil {
-		return nil, fmt.Errorf("serveHTTPGateway: invalid gateway address: %q (err: %s)", cfg.Addresses.Gateway, err)
-	}
-
-	gwLis, err := manet.Listen(gatewayMaddr)
-	if err != nil {
-		return nil, fmt.Errorf("serveHTTPGateway: manet.Listen(%s) failed: %s", gatewayMaddr, err)
-	}
-
-	var opts = []corehttp.ServeOption{
-		corehttp.IPNSHostnameOption(),
-		corehttp.GatewayOption(cfg.Gateway.Writable, "/ipfs", "/ipns"),
-		corehttp.CheckVersionOption(),
-		corehttp.CommandsROOption(*cctx),
-	}
-	if len(cfg.Gateway.RootRedirect) > 0 {
-		opts = append(opts, corehttp.RedirectOption("", cfg.Gateway.RootRedirect))
-	}
-
-	errc := make(chan error)
-	go func() {
-		errc <- corehttp.Serve(node, manet.NetListener(gwLis), opts...)
-		close(errc)
-	}()
-	return errc, nil
-}
-
-func startGC(ctx context.Context, node *core.IpfsNode, cfg *config.Config) <-chan error {
+func startGC(ctx context.Context, node *core.IpfsNode, cfg *config.Config) {
 	// ignore if not set
 	if cfg.Datastore.GCPeriod == "" {
-		return nil
+		return
 	}
 
-	errc := make(chan error)
 	go func() {
-		errc <- corerepo.PeriodicGC(ctx, node)
-		close(errc)
+		err := corerepo.PeriodicGC(ctx, node)
+		log.Error("PeriodicGC:", err)
 	}()
-	return errc, nil
-}
-
-// merge does fan-in of multiple read-only error channels
-// taken from http://blog.golang.org/pipelines
-func merge(cs ...<-chan error) <-chan error {
-	var wg sync.WaitGroup
-	out := make(chan error)
-
-	// Start an output goroutine for each input channel in cs.  output
-	// copies values from c to out until c is closed, then calls wg.Done.
-	output := func(c <-chan error) {
-		for n := range c {
-			out <- n
-		}
-		wg.Done()
-	}
-	for _, c := range cs {
-		if c != nil {
-			wg.Add(1)
-			go output(c)
-		}
-	}
-
-	// Start a goroutine to close out once all the output goroutines are
-	// done.  This must start after the wg.Add call.
-	go func() {
-		wg.Wait()
-		close(out)
-	}()
-	return out
-}
-
-func oneFromMerged(es <-chan error) <-chan error {
-	out := make(chan error)
-	go func() {
-		var errs []string
-		for e := range es {
-			if e != nil {
-				errs = append(errs, e.Error())
-			}
-		}
-		out <- errors.New(strings.Join(errs, "\n"))
-		close(out)
-	}()
-	return out
 }

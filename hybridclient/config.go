@@ -1,22 +1,42 @@
 // reserved names: DIRECT localhost 127.0.0.1 0.0.0.0 0
 // env:
-// HYBRID_CONFIG_PARENT=$HOME
+// HYBRID_ROOT_PATH=$HOME/.hybrid
 // HYBRID_DEV=false
-// HYBRID_EXPOSE=7777
+// HYBRID_BIND=:7777
 // HYBRID_FILE_SERVERS_DISABLED=a,b,c
 // HYBRID_ROUTER_DISABLED=a,b,c
 package hybridclient
 
+const (
+	HybridIpfsProtocolVersion = "1.0"
+	HybridIpfsProtocol        = "/hybrid/1.0"
+)
+
+type Ipfs struct {
+	ListenProtocols   []string `validate:"unique" default:"[\"/hybrid/1.0\"]"`
+	FakeApiListenAddr string   `validate:"tcp_addr"`
+
+	GatewayServerName string `validate:"omitempty,hostname"`
+	ApiServerName     string `validate:"omitempty,hostname"`
+
+	Profile          []string `validate:"unique"`
+	AutoMigrate      bool
+	EnableIPNSPubSub bool
+	EnableFloodSub   bool
+	EnableMultiplex  bool
+
+	Token        string   `validate:"lte=732"`
+	VerifyKeyHex string   `validate:"len=64,hexadecimal"`
+	Revoked      []string `validate:"unique"`
+}
+
 // server types
 
-type TcpServer struct {
-	Name            string `validate:"omitempty,hostname"`
-	Addr            string `validate:"tcp_addr"`
-	NoTLS           bool
-	ClientScalarHex string `validate:"omitempty,len=64,hexadecimal"`
-	ServerPublicHex string `validate:"len=64,hexadecimal"`
-	NoAuth          bool
-	Token           string `validate:"lte=732"`
+type IpfsServer struct {
+	Name     string `validate:"omitempty,hostname"`
+	Peer     string `validate:"required"`
+	Protocol string `validate:"required" default:"/hybrid/1.0"`
+	Token    string `validate:"lte=732"`
 }
 
 type FileServer struct {
@@ -63,20 +83,23 @@ type RouterItem struct {
 }
 
 type Config struct {
-	Schema  string `json:"-" yaml:"-" toml:"-"`
-	BaseDir string `env:"HYBRID_CONFIG_BSAE_DIR" validate:"required" default:"$HOME" json:"-" yaml:"-" toml:"-"`
+	Schema   string `json:"-" yaml:"-" toml:"-"`
+	RootPath string `env:"HYBRID_ROOT_PATH" validate:"required" default:"$HOME/.hybrid" json:"-" yaml:"-" toml:"-"`
 
 	Version string
 	Dev     bool   `env:"HYBRID_DEV"`
-	Expose  uint16 `env:"HYBRID_EXPOSE"        validate:"gt=0"     default:"7777"`
+	Bind    string `env:"HYBRID_BIND validate:"tcp_addr" default:":7777"`
 
 	ScalarHex string `validate:"len=64,hexadecimal"`
-	ToxNospam uint32 `validate:"required"`
-	Token     string `validate:"required,lte=732"`
+	Token     string `validate:"omitempty,lte=732"`
 
-	TcpServers       []TcpServer
+	Ipfs Ipfs
+
+	IpfsServers      []IpfsServer
 	FileServers      []FileServer
 	HttpProxyServers []HttpProxyServer
 
 	Routers []RouterItem
+
+	tree *ConfigTree
 }

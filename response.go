@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"strconv"
 )
 
 type ResponseWriter struct {
@@ -19,7 +20,8 @@ type ResponseWriter struct {
 	//
 	// To get the implicit headers set by the server (such as
 	// automatic Content-Type), use the Result method.
-	header http.Header
+	header        http.Header
+	contentLength int64
 
 	// writer is the buffer to which the Handler's Write calls are sent.
 	// If nil, the Writes are silently discarded.
@@ -31,9 +33,10 @@ type ResponseWriter struct {
 // NewResponseWriter returns an initialized ResponseWriter.
 func NewResponseWriter(w io.Writer) *ResponseWriter {
 	return &ResponseWriter{
-		header: make(http.Header),
-		writer: w,
-		code:   200,
+		header:        make(http.Header),
+		contentLength: -1,
+		writer:        w,
+		code:          200,
 	}
 }
 
@@ -62,16 +65,21 @@ func (rw *ResponseWriter) writeHeader(b []byte) {
 		m.Set("Content-Type", http.DetectContentType(b))
 	}
 
+	length, hasLength := m["Content-Length"]
+	if hasLength {
+		cl, err := strconv.ParseInt(length[0], 10, 64)
+		if err == nil {
+			rw.contentLength = cl
+		}
+	}
+
 	rw.WriteHeader(200)
 }
 
 // Write always succeeds and writes to rw.writer, if not nil.
 func (rw *ResponseWriter) Write(buf []byte) (int, error) {
 	rw.writeHeader(buf)
-	if rw.writer != nil {
-		rw.writer.Write(buf)
-	}
-	return len(buf), nil
+	return rw.writer.Write(buf)
 }
 
 // WriteHeader sets rw.code. After it is called, changing rw.Header
@@ -83,12 +91,13 @@ func (rw *ResponseWriter) WriteHeader(code int) {
 	rw.code = code
 	rw.wroteHeader = true
 	head, _ := httputil.DumpResponse(&http.Response{
-		StatusCode: code,
-		Status:     http.StatusText(code),
-		Header:     rw.header,
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
+		StatusCode:    code,
+		Status:        http.StatusText(code),
+		Header:        rw.header,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		ContentLength: rw.contentLength,
 	}, false)
 	rw.writer.Write(head)
 }

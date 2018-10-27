@@ -31,8 +31,8 @@ type Verifier struct {
 	RevokeChecker
 }
 
-func (v *Verifier) Verify(pk []byte, raw []byte) (*jwt.Claims, error) {
-	if v.Revoked(pk) {
+func (v *Verifier) Verify(id []byte, raw []byte) (*jwt.Claims, error) {
+	if v.Revoked(id) {
 		return nil, ErrToxRevoked
 	}
 
@@ -67,7 +67,7 @@ func (v *Verifier) Verify(pk []byte, raw []byte) (*jwt.Claims, error) {
 	}
 
 	err = claims.Validate(jwt.Expected{
-		Audience: jwt.Audience([]string{string(pk)}),
+		Audience: jwt.Audience([]string{string(id)}),
 		Time:     time.Now(),
 	})
 	return claims, err

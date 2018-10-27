@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	ma "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr"
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr-net"
+	manet "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr-net"
 )
 
 var (
@@ -20,16 +20,25 @@ type Dialer interface {
 	Addr() net.Addr
 }
 
-func NewListenDialer(listenerAddr, dialerAddr ma.Multiaddr) (manet.Listener, Dialer) {
+func NewListenDialer(listenerAddr, dialerAddr ma.Multiaddr) (manet.Listener, Dialer, error) {
+	laddr, err := toCombinedAddr(listenerAddr)
+	if err != nil {
+		return nil, nil, err
+	}
+	daddr, err := toCombinedAddr(dialerAddr)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	dl := &dialListener{
-		combinedAddr: combinedAddr{listenerAddr},
+		combinedAddr: laddr,
 		connCh:       make(chan manet.Conn),
 		doneCh:       make(chan struct{}),
 	}
 	return dl, dialer{
-		combinedAddr: combinedAddr{dialerAddr},
+		combinedAddr: daddr,
 		dialListener: dl,
-	}
+	}, nil
 }
 
 type dialListener struct {
@@ -97,17 +106,16 @@ func (d dialer) Dial(ctx context.Context) (manet.Conn, error) {
 
 type combinedAddr struct {
 	maddr ma.Multiaddr
+	naddr net.Addr
 }
 
-func (ca combinedAddr) Multiaddr() ma.Multiaddr {
-	return ca.maddr
-}
-func (ca combinedAddr) Addr() net.Addr {
-	addr := netAddr(ca.maddr.String())
-	return &addr
+func toCombinedAddr(maddr ma.Multiaddr) (combinedAddr, error) {
+	naddr, err := manet.ToNetAddr(maddr)
+	if err != nil {
+		return combinedAddr{}, err
+	}
+	return combinedAddr{maddr, naddr}, nil
 }
 
-type netAddr string
-
-func (a *netAddr) Network() string { return "local" }
-func (a *netAddr) String() string  { return string(*a) }
+func (ca combinedAddr) Multiaddr() ma.Multiaddr { return ca.maddr }
+func (ca combinedAddr) Addr() net.Addr          { return ca.naddr }

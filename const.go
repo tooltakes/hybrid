@@ -22,3 +22,11 @@ var (
 	Standard301Prefix               = []byte("HTTP/1.1 301 Moved Permanently\r\nLocation: ")
 	Standard502LocalCDN             = []byte("HTTP/1.1 502 LocalCDN\r\n\r\n")
 )
+
+func IsHybridLocal(short string) bool {
+	switch short {
+	case HostLocal0, HostLocalhost, HostLocal127, HostLocal0000:
+		return true
+	}
+	return false
+}

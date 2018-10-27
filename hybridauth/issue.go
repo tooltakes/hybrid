@@ -3,6 +3,7 @@ package hybridauth
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"time"
 
@@ -27,7 +28,7 @@ func (ns *NonceSource) Nonce() (string, error) {
 
 type Signer struct {
 	KeyID       uint32
-	Key         ed25519.PrivateKey
+	Ed25519Seed []byte
 	NonceSource jose.NonceSource
 	Subject     string
 	Issuer      string
@@ -42,6 +43,10 @@ type Issuer struct {
 }
 
 func NewIssuer(s *Signer) (*Issuer, error) {
+	if len(s.Ed25519Seed) != ed25519.SeedSize {
+		return nil, fmt.Errorf("ed25519 seed size should not be %d", len(s.Ed25519Seed))
+	}
+
 	opts := &jose.SignerOptions{
 		NonceSource: s.NonceSource,
 		ExtraHeaders: map[jose.HeaderKey]interface{}{
@@ -56,7 +61,7 @@ func NewIssuer(s *Signer) (*Issuer, error) {
 		Algorithm: jose.EdDSA,
 		Key: jose.JSONWebKey{
 			KeyID: hex.EncodeToString(keyid),
-			Key:   s.Key,
+			Key:   ed25519.NewKeyFromSeed(s.Ed25519Seed),
 		},
 	}, opts)
 	if err != nil {

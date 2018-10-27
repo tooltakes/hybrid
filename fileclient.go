@@ -24,7 +24,7 @@ type FileClient struct {
 }
 
 func NewFileClient(config FileClientConfig) (*FileClient, error) {
-	hfs, closer, err := hybridzipfs.New(config.RootZip)
+	hfs, closer, err := hybridzipfs.New(config.RootZip + ".zip")
 	if err != nil {
 		config.Log.Error("hybridzipfs.New", zap.String("RootZip", config.RootZip), zap.Error(err))
 		return nil, err

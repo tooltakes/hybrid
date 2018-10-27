@@ -8,6 +8,7 @@ import (
 type Hybrid struct {
 	Routers      []Router
 	Proxies      map[string]Proxy
+	LocalServers map[string]http.Handler
 	LocalHandler http.Handler
 }
 
@@ -20,18 +21,24 @@ func (h *Hybrid) Proxy(conn net.Conn) {
 		return
 	}
 
-	switch c.Hybrid {
-	case HostLocal0, HostLocalhost, HostLocal127, HostLocal0000:
-		if h.LocalHandler != nil {
-			h.LocalHandler.ServeHTTP(NewResponseWriter(c.Writer), c.Request)
-		} else {
-			conn.Write(StandardLocalServiceUnaviliable)
-		}
-		return
-	}
-
-	// XXX.hybrid
 	if c.Hybrid != "" {
+		if h.LocalServers != nil {
+			handler, ok := h.LocalServers[c.Hybrid]
+			if ok {
+				handler.ServeHTTP(NewResponseWriter(c.Writer), c.Request)
+				return
+			}
+		}
+
+		if IsHybridLocal(c.Hybrid) {
+			if h.LocalHandler != nil {
+				h.LocalHandler.ServeHTTP(NewResponseWriter(c.Writer), c.Request)
+			} else {
+				conn.Write(StandardLocalServiceUnaviliable)
+			}
+			return
+		}
+
 		p, ok := h.Proxies[c.Hybrid]
 		if !ok {
 			conn.Write([]byte("HTTP/1.1 404 Hybrid Not Found\r\n\r\n"))

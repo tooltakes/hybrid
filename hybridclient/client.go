@@ -1,13 +1,13 @@
 package hybridclient
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
 
 	"github.com/empirefox/hybrid"
+	"github.com/empirefox/hybrid/hybridipfs"
 	"github.com/empirefox/hybrid/hybridutils"
 	"go.uber.org/zap"
 )
@@ -15,6 +15,7 @@ import (
 type Client struct {
 	log            *zap.Logger
 	config         Config
+	ipfs           *hybridipfs.Ipfs
 	hybrid         *hybrid.Hybrid
 	listener       net.Listener
 	proxies        map[string]hybrid.Proxy
@@ -26,12 +27,16 @@ type Client struct {
 	token          []byte
 }
 
-func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Client, error) {
-	t := NewConfigTree(config.BaseDir)
+func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http.Handler, localHandler http.Handler, log *zap.Logger) (*Client, error) {
+	t, err := config.ConfigTree()
+	if err != nil {
+		return nil, err
+	}
 
 	c := Client{
 		log:    log,
-		config: config,
+		config: *config,
+		ipfs:   hi,
 		proxies: map[string]hybrid.Proxy{
 			"DIRECT": hybrid.DirectProxy{},
 		},
@@ -54,27 +59,33 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 		Scalar: scalar,
 	})
 
-	// TcpServers
-	for _, s := range config.TcpServers {
-		ts, err := newTcpServer(s, c.token)
+	// IpfsServers
+	ipfsToken := []byte(config.Ipfs.Token)
+	if len(ipfsToken) == 0 {
+		ipfsToken = c.token
+	}
+	for _, r := range config.IpfsServers {
+		s, err := newIpfsServer(r, ipfsToken)
 		if err != nil {
-			log.Error("newTcpServer", zap.Error(err))
+			log.Error("newIpfsServer", zap.Error(err))
 			return nil, err
 		}
+		// /hybrid/1.0 /token/ xxx
+		protocol := HybridIpfsProtocol + PathTokenPrefix + string(s.Token)
 		dialer := &hybrid.H2Dialer{
-			Dial:         func() (c net.Conn, err error) { return net.Dial("tcp", ts.Addr) },
-			NoTLS:        false,
-			ClientScalar: ts.ClientScalar,
-			ServerPubkey: ts.ServerPubkey,
-			NoAuth:       false,
-			Token:        ts.Token,
+			Dial:         func() (net.Conn, error) { return c.ipfs.Dial(s.Peer, protocol) },
+			NoTLS:        true,
+			ClientScalar: nil,
+			ServerPubkey: nil,
+			NoAuth:       true,
+			Token:        s.Token,
 		}
 		h2Proxy, err := h2.AddDialer(dialer)
 		if err != nil {
 			return nil, err
 		}
 
-		c.proxies[ts.Name] = h2Proxy
+		c.proxies[s.Name] = h2Proxy
 	}
 
 	// FileServers
@@ -110,32 +121,41 @@ func NewClient(config Config, localHandler http.Handler, log *zap.Logger) (*Clie
 	for i, ri := range config.Routers {
 		router, err := c.newRouter(ri)
 		if err != nil {
+			c.Close()
 			return nil, err
 		}
 		routers[i] = router
 	}
 
+	if localServers == nil {
+		localServers = make(map[string]http.Handler)
+	}
+	if config.Ipfs.ApiServerName != "" {
+		localServers[config.Ipfs.ApiServerName] = hi.ApiServer()
+	}
+	if config.Ipfs.GatewayServerName != "" {
+		// web: localStorage.setItem('ipfsApi', '/dns4/api-ipfs.hybrid/tcp/80')
+		localServers[config.Ipfs.GatewayServerName] = hi.GatewayServer()
+	}
+
 	c.hybrid = &hybrid.Hybrid{
 		Routers:      routers,
 		Proxies:      c.proxies,
+		LocalServers: localServers,
 		LocalHandler: localHandler,
 	}
+
+	ln, err := net.Listen("tcp", c.config.Bind)
+	if err != nil {
+		c.log.Error("Listen", zap.Error(err))
+		c.Close()
+		return nil, err
+	}
+	c.listener = ln
 	return &c, nil
 }
 
-func (c *Client) InitListener() error {
-	if c.listener == nil {
-		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", c.config.Expose))
-		if err != nil {
-			c.log.Error("Listen", zap.Error(err))
-			return err
-		}
-		c.listener = ln
-	}
-	return nil
-}
-
-func (c *Client) Run() error {
+func (c *Client) Serve() error {
 	err := hybrid.SimpleListenAndServe(c.listener, c.Proxy)
 	if err != nil {
 		c.log.Error("SimpleListenAndServe", zap.Error(err))
@@ -143,14 +163,19 @@ func (c *Client) Run() error {
 	return err
 }
 
-func (c *Client) StopAndKill() {
+func (c *Client) Close() (err error) {
 	if c.listener != nil {
-		c.listener.Close()
+		err = c.listener.Close()
 	}
 
 	for _, fc := range c.fileClients {
-		fc.Close()
+		if err != nil {
+			err = fc.Close()
+		} else {
+			fc.Close()
+		}
 	}
+	return
 }
 
 func (c *Client) Proxy(conn net.Conn) { c.hybrid.Proxy(conn) }

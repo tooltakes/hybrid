@@ -89,8 +89,15 @@ func (c *Context) parseHostPortIP() error {
 		return nil
 	}
 
-	if req.URL.Scheme == "" || req.URL.Host == "" {
+	if req.URL.Scheme == "" {
 		return ErrRequestURI
+	}
+	if req.URL.Host == "" && req.Host == "" {
+		if c.Hybrid == "" {
+			return ErrRequestURI
+		}
+		// revert to local
+		req.URL.Host = c.Hybrid + HostHybridSuffix
 	}
 
 	c.HostPort, c.HostNoPort, c.Port = authorityAddrFull(req.URL.Scheme, req.URL.Host)

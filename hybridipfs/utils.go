@@ -1,30 +1,43 @@
 package hybridipfs
 
-import "github.com/ipsn/go-ipfs/core"
+import (
+	"github.com/ipsn/go-ipfs/core"
+	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"
+)
 
-func (nd *Node) getDaemonNode() (*core.IpfsNode, error) {
-	nd.mu.Lock()
-	defer nd.mu.Unlock()
+func (hi *Ipfs) getDaemonNode() (*core.IpfsNode, error) {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
 
-	if !nd.isOnline() {
+	if !hi.isOnline() {
 		return nil, ErrIsOffline
 	}
-	return nd.ipfsNode, nil
+	return hi.ipfsNode, nil
 }
 
-func (nd *Node) getOfflineNode() (*core.IpfsNode, error) {
-	nd.mu.Lock()
-	defer nd.mu.Unlock()
+func (hi *Ipfs) getOfflineNode() (*core.IpfsNode, error) {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
 
-	if nd.isOnline() {
+	if hi.isOnline() {
 		return nil, ErrIsOnline
 	}
-	return nd.ipfsNode, nil
+	return hi.ipfsNode, nil
 }
 
-func (nd *Node) getAnyNode() *core.IpfsNode {
-	nd.mu.Lock()
-	defer nd.mu.Unlock()
+func (hi *Ipfs) getAnyNode() *core.IpfsNode {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
 
-	return nd.ipfsNode, nil
+	return hi.ipfsNode
+}
+
+func (hi *Ipfs) coreAPI() (coreiface.CoreAPI, error) {
+	hi.mu.Lock()
+	defer hi.mu.Unlock()
+
+	if !hi.isOnline() {
+		return nil, ErrIsOffline
+	}
+	return hi.api, nil
 }

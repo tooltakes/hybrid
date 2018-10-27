@@ -1,17 +1,37 @@
 package hybridipfs
 
 import (
-	"io"
+	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"
+	"github.com/ipsn/go-ipfs/core/coreapi/interface/options"
 
-	coreunix "github.com/ipsn/go-ipfs/core/coreunix"
-
-	uio "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-unixfs/io"
+	files "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-files"
 )
 
-func (nd *Node) Cat(b58 string) (uio.DagReader, error) {
-	return coreunix.Cat(nd.ctx, nd.ipfsNode, b58)
+func (hi *Ipfs) Get(path string) (coreiface.UnixfsFile, error) {
+	p, err := coreiface.ParsePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	api, err := hi.coreAPI()
+	if err != nil {
+		return nil, err
+	}
+
+	return api.Unixfs().Get(hi.ctx, p)
 }
 
-func (nd *Node) Add(r io.Reader) (string, error) {
-	return coreunix.Add(nd.ipfsNode, r)
+func (hi *Ipfs) Add(file files.File, settings options.UnixfsAddSettings) (coreiface.ResolvedPath, error) {
+	api, err := hi.coreAPI()
+	if err != nil {
+		return nil, err
+	}
+
+	return api.Unixfs().Add(hi.ctx, file, func(target *options.UnixfsAddSettings) error {
+		if settings.CidVersion == 0 {
+			settings.CidVersion = target.CidVersion
+		}
+		*target = settings
+		return nil
+	})
 }

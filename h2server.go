@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -20,6 +21,8 @@ type H2Server struct {
 	LocalHandler http.Handler
 
 	Pool httputil.BufferPool
+
+	mu sync.Mutex
 }
 
 func (s *H2Server) Serve(listener net.Listener) error {
@@ -27,13 +30,14 @@ func (s *H2Server) Serve(listener net.Listener) error {
 	s2 := &http2.Server{}
 	http2.ConfigureServer(s1, s2)
 
+	s.mu.Lock()
 	if s.ReverseProxy.FlushInterval == 0 {
 		s.ReverseProxy.FlushInterval = 250 * time.Millisecond
 	}
-
 	if s.Pool == nil {
 		s.Pool = DefaultBufferPool
 	}
+	s.mu.Unlock()
 
 	return SimpleListenAndServe(listener, func(c net.Conn) {
 		s2.ServeConn(c, &http2.ServeConnOpts{BaseConfig: s1})

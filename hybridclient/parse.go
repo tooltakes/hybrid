@@ -10,51 +10,38 @@ import (
 	"strings"
 
 	"github.com/empirefox/hybrid"
-	"github.com/empirefox/hybrid/hybridutils"
 	"go.uber.org/zap"
+
+	peer "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-peer"
+	ma "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr"
+	manet "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr-net"
 )
 
-type tcpServer struct {
-	Name         string
-	Addr         string
-	NoTLS        bool
-	ClientScalar *[32]byte
-	ServerPubkey *[32]byte
-	NoAuth       bool
-	Token        []byte
+type ipfsServer struct {
+	Name     string
+	Peer     peer.ID
+	Protocol string
+	Token    []byte
 }
 
-func newTcpServer(raw TcpServer, token []byte) (*tcpServer, error) {
-	s := tcpServer{
-		Name:   raw.Name,
-		Addr:   raw.Addr,
-		NoTLS:  raw.NoTLS,
-		NoAuth: raw.NoAuth,
-		Token:  []byte(raw.Token),
+func newIpfsServer(raw IpfsServer, token []byte) (*ipfsServer, error) {
+	id, err := peer.IDB58Decode(raw.Peer)
+	if err != nil {
+		return nil, err
 	}
 
+	s := ipfsServer{
+		Name:     raw.Name,
+		Peer:     id,
+		Protocol: raw.Protocol,
+		Token:    []byte(raw.Token),
+	}
 	if s.Name == "" {
-		s.Name = strings.Replace(s.Addr, ":", "-", -1)
+		s.Name = raw.Peer
 	}
 	if len(s.Token) == 0 {
 		s.Token = token
 	}
-
-	if !s.NoTLS {
-		if raw.ClientScalarHex != "" {
-			scalar, err := hybridutils.DecodeKey32(raw.ClientScalarHex)
-			if err != nil {
-				return nil, err
-			}
-			s.ClientScalar = scalar
-		}
-		pubkey, err := hybridutils.DecodeKey32(raw.ServerPublicHex)
-		if err != nil {
-			return nil, err
-		}
-		s.ServerPubkey = pubkey
-	}
-
 	return &s, nil
 }
 
@@ -212,4 +199,16 @@ func (c *Client) newNetRouter(name string, raw *IPNetRouter) (*hybrid.IPNetRoute
 	}
 
 	return &router, nil
+}
+
+func parseTCPMultiaddr(addr string) (ma.Multiaddr, error) {
+	naddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	if naddr.IP == nil {
+		naddr.IP = net.IPv4zero
+	}
+	return manet.FromNetAddr(naddr)
 }

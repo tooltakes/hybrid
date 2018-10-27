@@ -6,23 +6,20 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 
-	assets "github.com/ipsn/go-ipfs/assets"
 	"github.com/ipsn/go-ipfs/core"
-	core "github.com/ipsn/go-ipfs/core"
-	namesys "github.com/ipsn/go-ipfs/namesys"
-	repo "github.com/ipsn/go-ipfs/repo"
-	fsrepo "github.com/ipsn/go-ipfs/repo/fsrepo"
-	migrate "github.com/ipsn/go-ipfs/repo/fsrepo/migrations"
+	"github.com/ipsn/go-ipfs/namesys"
+	"github.com/ipsn/go-ipfs/repo"
+	"github.com/ipsn/go-ipfs/repo/fsrepo"
 	logging "github.com/whyrusleeping/go-logging"
 
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmdkit"
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
-	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log"
+	cmdkit "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-cmdkit"
+	config "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
+	ipfslog "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log"
 	logWriter "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log/writer"
 )
 
@@ -34,12 +31,12 @@ const (
 // Only messages >= INFO are logged.
 func ForwardLog(w io.Writer) {
 	logWriter.Configure(logWriter.Output(w))
-	log.SetAllLoggers(logging.INFO)
+	ipfslog.SetAllLoggers(logging.INFO)
 }
 
 // Fsck copied from RepoFsckCmd
 func Fsck(repoRoot string) error {
-	err := EnsureNoIpfsDaemon(repoRoot)
+	err := EnsureNoIpfs(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -70,27 +67,27 @@ func Fsck(repoRoot string) error {
 
 var errRepoExists = errors.New(`ipfs configuration file already exists!`)
 
-func InitDefaultOrMigrateRepoIfNeeded(repoPath string, opts *DaemonOptions) (repo.Repo, error) {
-	err := InitWithDefaultsIfNotExist(repoPath, opts.Profile)
+func InitDefaultOrMigrateRepoIfNeeded(c *Config) (repo.Repo, error) {
+	err := InitWithDefaultsIfNotExist(c.RepoPath, c.Profile)
 	if err != nil {
 		return nil, err
 	}
 
 	// acquire the repo lock _before_ constructing a node. we need to make
 	// sure we are permitted to access the resources (datastore, etc.)
-	repo, err := fsrepo.Open(repoPath)
+	repo, err := fsrepo.Open(c.RepoPath)
 	switch err {
 	case fsrepo.ErrNeedMigration:
-		if !opts.AutoMigrate {
+		if !c.AutoMigrate {
 			return nil, err
 		}
 
-		err = migrate.RunMigration(fsrepo.RepoVersion)
+		err = MigrateDirectly(c.RepoPath, fsrepo.RepoVersion)
 		if err != nil {
 			return nil, err
 		}
 
-		repo, err = fsrepo.Open(repoPath)
+		repo, err = fsrepo.Open(c.RepoPath)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +100,7 @@ func InitDefaultOrMigrateRepoIfNeeded(repoPath string, opts *DaemonOptions) (rep
 	return repo, err
 }
 
-func InitWithDefaultsIfNotExist(repoRoot string, profile string) error {
+func InitWithDefaultsIfNotExist(repoRoot string, profile []string) error {
 	_, err := os.Stat(repoRoot)
 	if os.IsNotExist(err) {
 		return InitWithDefaults(repoRoot, profile)
@@ -111,16 +108,12 @@ func InitWithDefaultsIfNotExist(repoRoot string, profile string) error {
 	return err
 }
 
-func InitWithDefaults(repoRoot string, profile string) error {
-	var profiles []string
-	if profile != "" {
-		profiles = strings.Split(profile, ",")
-	}
-	return Init(repoRoot, false, nBitsForKeypairDefault, profiles, nil)
+func InitWithDefaults(repoRoot string, profile []string) error {
+	return Init(repoRoot, nBitsForKeypairDefault, profile, nil)
 }
 
-func Init(repoRoot string, empty bool, nBitsForKeypair int, confProfiles []string, conf *config.Config) error {
-	err := EnsureNoIpfsDaemon(repoRoot)
+func Init(repoRoot string, nBitsForKeypair int, confProfiles []string, conf *config.Config) error {
+	err := EnsureNoIpfs(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -135,7 +128,6 @@ func Init(repoRoot string, empty bool, nBitsForKeypair int, confProfiles []strin
 	}
 
 	if conf == nil {
-		var err error
 		conf, err = config.Init(ioutil.Discard, nBitsForKeypair)
 		if err != nil {
 			return err
@@ -153,14 +145,12 @@ func Init(repoRoot string, empty bool, nBitsForKeypair int, confProfiles []strin
 		}
 	}
 
-	if err := fsrepo.Init(repoRoot, conf); err != nil {
+	if err = fsrepo.Init(repoRoot, conf); err != nil {
 		return err
 	}
 
-	if !empty {
-		if err := addDefaultAssets(repoRoot); err != nil {
-			return err
-		}
+	if err = initializeCustomConfig(repoRoot); err != nil {
+		return err
 	}
 
 	return initializeIpnsKeyspace(repoRoot)
@@ -199,52 +189,60 @@ func checkWritable(dir string) error {
 	return err
 }
 
-func addDefaultAssets(repoRoot string) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	r, err := fsrepo.Open(repoRoot)
+func initializeCustomConfig(repoRoot string) error {
+	repo, err := fsrepo.Open(repoRoot)
 	if err != nil { // NB: repo is owned by the node
 		return err
 	}
 
-	nd, err := core.NewNode(ctx, &core.BuildCfg{Repo: r})
-	if err != nil {
-		return err
-	}
-	defer nd.Close()
+	swarmPort := findFreePortAfter(4001, 100)
 
-	dkey, err := assets.SeedInitDocs(nd)
-	if err != nil {
-		return fmt.Errorf("init: seeding init docs failed: %s", err)
+	// Resource on the config keys can be found here:
+	// https://github.com/ipfs/go-ipfs/blob/master/docs/config.md
+	config := map[string]interface{}{
+		"Addresses.Swarm": []string{
+			fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", swarmPort),
+			fmt.Sprintf("/ip6/::/tcp/%d", swarmPort),
+		},
+		"Addresses.API":     "",
+		"Addresses.Gateway": "",
+		"API.HTTPHeaders.Access-Control-Allow-Origin": []string{"*"},
+		"Reprovider.Interval":                         "2h",
+		"Swarm.EnableRelayHop":                        true,
 	}
-	return err
+
+	for key, value := range config {
+		if err := repo.SetConfigKey(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func initializeIpnsKeyspace(repoRoot string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	r, err := fsrepo.Open(repoRoot)
+	repo, err := fsrepo.Open(repoRoot)
 	if err != nil { // NB: repo is owned by the node
 		return err
 	}
 
-	nd, err := core.NewNode(ctx, &core.BuildCfg{Repo: r})
+	hi, err := core.NewNode(ctx, &core.BuildCfg{Repo: repo})
 	if err != nil {
 		return err
 	}
-	defer nd.Close()
+	defer hi.Close()
 
-	err = nd.SetupOfflineRouting()
+	err = hi.SetupOfflineRouting()
 	if err != nil {
 		return err
 	}
 
-	return namesys.InitializeKeyspace(ctx, nd.Namesys, nd.Pinning, nd.PrivateKey)
+	return namesys.InitializeKeyspace(ctx, hi.Namesys, hi.Pinning, hi.PrivateKey)
 }
 
-func EnsureNoIpfsDaemon(repoPath string) error {
+func EnsureNoIpfs(repoPath string) error {
 	// Ipfs instance will lock it
 	daemonLocked, err := fsrepo.LockedByOtherProcess(repoPath)
 	if err != nil {
@@ -257,4 +255,26 @@ func EnsureNoIpfsDaemon(repoPath string) error {
 	}
 
 	return nil
+}
+
+// Find the next free tcp port near to `port` (possibly euqal to `port`).
+// Only `maxTries` number of trials will be made.
+// This method is (of course...) racy since the port might be already
+// taken again by another process until we startup our service on that port.
+func findFreePortAfter(port int, maxTries int) int {
+	for idx := 0; idx < maxTries; idx++ {
+		addr := fmt.Sprintf("localhost:%d", port+idx)
+		lst, err := net.Listen("tcp", addr)
+		if err != nil {
+			continue
+		}
+
+		if err := lst.Close(); err != nil {
+			// TODO: Well? Maybe do something?
+		}
+
+		return port + idx
+	}
+
+	return port
 }

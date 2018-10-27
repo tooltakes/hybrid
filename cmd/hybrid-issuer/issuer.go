@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/empirefox/hybrid/hybridauth"
@@ -15,9 +14,9 @@ import (
 )
 
 var (
-	priv    = flag.String("priv", "", "private key in hex, generate new key pair if not set")
+	seedHex = flag.String("seed", "", "seed in hex, generate new key pair if not set")
 	kid     = flag.Uint("kid", 0, "jwt header kid, must be uint")
-	target  = flag.String("target", "", "curve25519 public key in hex")
+	target  = flag.String("target", "", "target id in hex")
 	expires = flag.Uint("expires", 7, "jwt claim expires, default 7 days")
 	subject = flag.String("subject", "", "jwt claim subject")
 	issuer  = flag.String("issuer", "", "jwt claim issuer")
@@ -26,13 +25,12 @@ var (
 func main() {
 	flag.Parse()
 
-	if *priv == "" {
-		pubkey, privkey, err := ed25519.GenerateKey(nil)
+	if *seedHex == "" {
+		_, privkey, err := ed25519.GenerateKey(nil)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("ed25519 PrivateKey: %x\n", privkey)
-		fmt.Printf("ed25519 PublicKey: %x\n", pubkey)
+		printJson(privkey)
 		return
 	}
 
@@ -40,17 +38,17 @@ func main() {
 		log.Fatal("target should be set")
 	}
 
-	privkey, err := hex.DecodeString(*priv)
+	seed, err := hex.DecodeString(*seedHex)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(privkey) != ed25519.PrivateKeySize {
-		log.Fatalf("private key should be a 128 size hex, but got %d", len(privkey))
+	if len(seed) != ed25519.SeedSize {
+		log.Fatalf("seed should be a 64 size hex, but got %d", len(seed))
 	}
 
 	i, err := hybridauth.NewIssuer(&hybridauth.Signer{
-		KeyID: uint32(*kid),
-		Key:   ed25519.PrivateKey(privkey),
+		KeyID:       uint32(*kid),
+		Ed25519Seed: seed,
 		NonceSource: &hybridauth.NonceSource{
 			Len:  24,
 			Rand: rand.Reader,
@@ -64,11 +62,19 @@ func main() {
 	}
 
 	jwtStr, err := i.Issue(&jwt.Claims{
-		Audience: jwt.Audience([]string{strings.ToLower(*target)}),
+		Audience: jwt.Audience([]string{*target}),
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("issue ok:")
 	fmt.Println(jwtStr)
+}
+
+func printJson(privkey ed25519.PrivateKey) {
+	fmt.Printf(`{
+  "Seed": "%x",
+  "Pubkey": "%x"
+}
+`, privkey.Seed(), privkey.Public())
 }

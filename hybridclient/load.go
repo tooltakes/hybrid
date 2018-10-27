@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
 
 	"github.com/caarlos0/env"
+	"github.com/creasty/defaults"
 	version "github.com/hashicorp/go-version"
-	defaults "github.com/mcuadros/go-defaults"
 	"github.com/tidwall/gjson"
 	validator "gopkg.in/go-playground/validator.v9"
 )
@@ -16,8 +15,8 @@ import (
 // TODO Need add config version migration func
 
 const (
-	ConfigVersion           = "1.0"
-	ConfigVersionConstraint = "<=1.0"
+	ConfigVersion           = "1"
+	ConfigVersionConstraint = "=1"
 )
 
 func LoadConfig(c *Config) (*Config, error) {
@@ -29,10 +28,13 @@ func LoadConfig(c *Config) (*Config, error) {
 		return nil, err
 	}
 
-	defaults.SetDefaults(c)
+	err = defaults.Set(c)
+	if err != nil {
+		return nil, err
+	}
 
-	t := NewConfigTree(c.BaseDir)
-	configContent, err := ioutil.ReadFile(os.ExpandEnv(t.ConfigPath))
+	t, err := c.ConfigTree()
+	configContent, err := ioutil.ReadFile(t.ConfigPath)
 	if err != nil {
 		return nil, err
 	}

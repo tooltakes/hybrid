@@ -3,21 +3,23 @@ package hybridipfs
 import (
 	"fmt"
 
-	core "github.com/ipsn/go-ipfs/core"
-	"github.com/ipsn/go-ipfs/path"
-	"github.com/ipsn/go-ipfs/path/resolver"
-	uio "github.com/ipsn/go-ipfs/unixfs/io"
+	"github.com/ipsn/go-ipfs/core"
 
 	cid "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-cid"
+	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-path"
+	"github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-path/resolver"
+	uio "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-unixfs/io"
 	mh "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multihash"
 )
 
-func (nd *Node) Pin(hash string) error {
-	// Lock the store:
-	defer nd.ipfsNode.Blockstore.PinLock().Unlock()
+func (hi *Ipfs) Pin(hash string) error {
+	ipfsNode, err := hi.getDaemonNode()
+	if err != nil {
+		return err
+	}
 
 	rslv := &resolver.Resolver{
-		DAG:         nd.ipfsNode.DAG,
+		DAG:         ipfsNode.DAG,
 		ResolveOnce: uio.ResolveUnixfsOnce,
 	}
 
@@ -26,45 +28,58 @@ func (nd *Node) Pin(hash string) error {
 		return err
 	}
 
-	dagnode, err := core.Resolve(nd.ctx, nd.ipfsNode.Namesys, rslv, p)
+	// Lock the store:
+	defer ipfsNode.Blockstore.PinLock().Unlock()
+
+	dagnode, err := core.Resolve(hi.ctx, ipfsNode.Namesys, rslv, p)
 	if err != nil {
 		return fmt.Errorf("pin: %s", err)
 	}
 
-	err = nd.ipfsNode.Pinning.Pin(nd.ctx, dagnode, true)
+	err = ipfsNode.Pinning.Pin(hi.ctx, dagnode, true)
 	if err != nil {
 		return fmt.Errorf("pin: %s", err)
 	}
 
-	return nd.ipfsNode.Pinning.Flush()
+	return ipfsNode.Pinning.Flush()
 }
 
-func (nd *Node) Unpin(hash string) error {
-	// Lock the store:
-	defer nd.ipfsNode.Blockstore.PinLock().Unlock()
+func (hi *Ipfs) Unpin(hash string) error {
+	ipfsNode, err := hi.getDaemonNode()
+	if err != nil {
+		return err
+	}
 
 	mhash, err := mh.FromB58String(hash)
 	if err != nil {
 		return err
 	}
 
+	// Lock the store:
+	defer ipfsNode.Blockstore.PinLock().Unlock()
+
 	cid := cid.NewCidV0(mhash)
-	err = nd.ipfsNode.Pinning.Unpin(nd.ctx, cid, true)
+	err = ipfsNode.Pinning.Unpin(hi.ctx, cid, true)
 	if err != nil {
 		return err
 	}
 
-	return nd.ipfsNode.Pinning.Flush()
+	return ipfsNode.Pinning.Flush()
 }
 
-func (nd *Node) IsPinned(hash string) (bool, error) {
+func (hi *Ipfs) IsPinned(hash string) (bool, error) {
+	ipfsNode, err := hi.getDaemonNode()
+	if err != nil {
+		return false, err
+	}
+
 	mhash, err := mh.FromB58String(hash)
 	if err != nil {
 		return false, err
 	}
 
 	cid := cid.NewCidV0(mhash)
-	mode, _, err := nd.ipfsNode.Pinning.IsPinned(cid)
+	mode, _, err := ipfsNode.Pinning.IsPinned(cid)
 	if err != nil {
 		return false, err
 	}
