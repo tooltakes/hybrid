@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"time"
 
 	"github.com/empirefox/hybrid"
 	"github.com/empirefox/hybrid/hybridipfs"
@@ -90,7 +91,7 @@ func NewIpfs(ctx context.Context, config *Config, verify VerifyFunc, log *zap.Lo
 			Director: func(req *http.Request) {
 				// log.Debug("Accept request", zap.String("host", req.Host))
 			},
-			FlushInterval: config.ServerFlushInterval,
+			FlushInterval: time.Duration(config.ServerFlushMS) * time.Millisecond,
 		},
 	}
 

@@ -132,6 +132,7 @@ func (lst *Listener) Accept() (net.Conn, error) {
 			if lst.verify == nil || lst.verify(stream) {
 				return &stdStream{Stream: stream}, nil
 			}
+			stream.Close()
 		case <-lst.ctx.Done():
 			return nil, nil
 		}
