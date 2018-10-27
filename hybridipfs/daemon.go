@@ -18,6 +18,7 @@ import (
 
 	config "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
 	logging "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-log"
+	goprocess "github.com/ipsn/go-ipfs/gxlibs/github.com/jbenet/goprocess"
 	ma "github.com/ipsn/go-ipfs/gxlibs/github.com/multiformats/go-multiaddr"
 )
 
@@ -96,6 +97,10 @@ func NewIpfs(ctx context.Context, c *Config) (*Ipfs, error) {
 	hi.apiServer.SetOffline(nil)
 	hi.gatewayServer.SetOffline(nil)
 	return hi, nil
+}
+
+func (hi *Ipfs) Proccess() goprocess.Process {
+	return hi.ipfsNode.Process()
 }
 
 func (hi *Ipfs) IsOnline() bool {

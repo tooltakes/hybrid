@@ -7,6 +7,10 @@
 // HYBRID_ROUTER_DISABLED=a,b,c
 package hybridclient
 
+import (
+	"time"
+)
+
 const (
 	HybridIpfsProtocolVersion = "1.0"
 	HybridIpfsProtocol        = "/hybrid/1.0"
@@ -88,7 +92,9 @@ type Config struct {
 
 	Version string
 	Dev     bool   `env:"HYBRID_DEV"`
-	Bind    string `env:"HYBRID_BIND validate:"tcp_addr" default:":7777"`
+	Bind    string `env:"HYBRID_BIND validate:"omitempty,tcp_addr"`
+
+	ServerFlushInterval time.Duration `default:"200ms"`
 
 	ScalarHex string `validate:"len=64,hexadecimal"`
 	Token     string `validate:"omitempty,lte=732"`

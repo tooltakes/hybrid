@@ -19,23 +19,23 @@ const PathTokenPrefix = "/token/"
 
 type VerifyFunc func(peerID, token []byte) bool
 
-func NewIpfs(ctx context.Context, config *Config, verify VerifyFunc, log *zap.Logger) (*hybridipfs.Ipfs, error) {
+func NewIpfs(ctx context.Context, config *Config, verify VerifyFunc, log *zap.Logger) (*hybridipfs.Ipfs, <-chan error, error) {
 	apiListenAddr, err := parseTCPMultiaddr(config.Ipfs.FakeApiListenAddr)
 	if err != nil {
 		log.Error("Ipfs.FakeApiListenAddr", zap.Error(err))
-		return nil, err
+		return nil, nil, err
 	}
 
 	gatewayAddr, err := parseTCPMultiaddr(config.Bind)
 	if err != nil {
 		log.Error("Config.Bind", zap.Error(err))
-		return nil, err
+		return nil, nil, err
 	}
 
 	t, err := config.ConfigTree()
 	if err != nil {
 		log.Error("ConfigTree", zap.Error(err))
-		return nil, err
+		return nil, nil, err
 	}
 
 	ipfsConfig := &hybridipfs.Config{
@@ -55,7 +55,7 @@ func NewIpfs(ctx context.Context, config *Config, verify VerifyFunc, log *zap.Lo
 	hi, err := hybridipfs.NewIpfs(ctx, ipfsConfig)
 	if err != nil {
 		log.Error("NewNode", zap.Error(err))
-		return nil, err
+		return nil, nil, err
 	}
 
 	hi.Connected(func(ipfsNode *core.IpfsNode) {
@@ -74,7 +74,7 @@ func NewIpfs(ctx context.Context, config *Config, verify VerifyFunc, log *zap.Lo
 		ln, err := hi.Listen(p, match)
 		if err != nil {
 			cancel()
-			return nil, err
+			return nil, nil, err
 		}
 
 		ln.SetVerify(func(is inet.Stream) bool {
@@ -89,13 +89,15 @@ func NewIpfs(ctx context.Context, config *Config, verify VerifyFunc, log *zap.Lo
 		Log: log,
 		ReverseProxy: &httputil.ReverseProxy{
 			Director: func(req *http.Request) {
-				log.Debug("Accept request", zap.String("host", req.Host))
+				// log.Debug("Accept request", zap.String("host", req.Host))
 			},
-			FlushInterval: time.Second,
+			FlushInterval: config.ServerFlushInterval,
 		},
 	}
+
+	out := make(chan error, len(listeners))
 	for _, ln := range listeners {
-		go s.Serve(ln)
+		go func() { out <- s.Serve(ln) }()
 	}
-	return hi, nil
+	return hi, out, nil
 }

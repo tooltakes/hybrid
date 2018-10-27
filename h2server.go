@@ -32,7 +32,7 @@ func (s *H2Server) Serve(listener net.Listener) error {
 
 	s.mu.Lock()
 	if s.ReverseProxy.FlushInterval == 0 {
-		s.ReverseProxy.FlushInterval = 250 * time.Millisecond
+		s.ReverseProxy.FlushInterval = 200 * time.Millisecond
 	}
 	if s.Pool == nil {
 		s.Pool = DefaultBufferPool

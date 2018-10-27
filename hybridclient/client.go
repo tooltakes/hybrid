@@ -145,22 +145,31 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 		LocalHandler: localHandler,
 	}
 
-	ln, err := net.Listen("tcp", c.config.Bind)
-	if err != nil {
-		c.log.Error("Listen", zap.Error(err))
-		c.Close()
-		return nil, err
+	if c.config.Bind != "" {
+		ln, err := net.Listen("tcp", c.config.Bind)
+		if err != nil {
+			c.log.Error("Listen", zap.Error(err))
+			c.Close()
+			return nil, err
+		}
+		c.listener = ln
 	}
-	c.listener = ln
 	return &c, nil
 }
 
-func (c *Client) Serve() error {
-	err := hybrid.SimpleListenAndServe(c.listener, c.Proxy)
-	if err != nil {
-		c.log.Error("SimpleListenAndServe", zap.Error(err))
+func (c *Client) StartServe() <-chan error {
+	if c.listener != nil {
+		errc := make(chan error)
+		go func() {
+			err := hybrid.SimpleListenAndServe(c.listener, c.Proxy)
+			if err != nil {
+				c.log.Error("SimpleListenAndServe", zap.Error(err))
+			}
+			errc <- err
+		}()
+		return errc
 	}
-	return err
+	return nil
 }
 
 func (c *Client) Close() (err error) {

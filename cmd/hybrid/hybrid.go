@@ -15,6 +15,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/empirefox/hybrid/hybridauth"
 	"github.com/empirefox/hybrid/hybridclient"
@@ -80,7 +81,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	hi, err := hybridclient.NewIpfs(ctx, config, verify, log)
+	hi, listensErrc, err := hybridclient.NewIpfs(ctx, config, verify, log)
 	if err != nil {
 		log.Fatal("NewIpfs", zap.Error(err))
 	}
@@ -90,15 +91,54 @@ func main() {
 		log.Fatal("ipfs.Connect", zap.Error(err))
 	}
 
-	localServers := map[string]http.Handler{}
-	client, err := hybridclient.NewClient(config, hi, localServers, nil, log)
-	if err != nil {
-		log.Fatal("NewClient", zap.Error(err))
+	var clientErrc <-chan error
+	if config.Bind != "" {
+		localServers := map[string]http.Handler{}
+		client, err := hybridclient.NewClient(config, hi, localServers, nil, log)
+		if err != nil {
+			log.Fatal("NewClient", zap.Error(err))
+		}
+		defer client.Close()
+		clientErrc = client.StartServe()
 	}
-	defer client.Close()
 
-	err = client.Serve()
-	if err != nil {
-		log.Fatal("Serve", zap.Error(err))
+	for err := range merge(clientErrc, listensErrc) {
+		if err != nil {
+			log.Error("hybrid exit", zap.Error(err))
+		}
 	}
+	err = hi.Proccess().Err()
+	if err != nil {
+		log.Error("hybrid exit", zap.Error(err))
+	}
+}
+
+// merge does fan-in of multiple read-only error channels
+// taken from http://blog.golang.org/pipelines
+func merge(cs ...<-chan error) <-chan error {
+	var wg sync.WaitGroup
+	out := make(chan error)
+
+	// Start an output goroutine for each input channel in cs.  output
+	// copies values from c to out until c is closed, then calls wg.Done.
+	output := func(c <-chan error) {
+		for n := range c {
+			out <- n
+		}
+		wg.Done()
+	}
+	for _, c := range cs {
+		if c != nil {
+			wg.Add(1)
+			go output(c)
+		}
+	}
+
+	// Start a goroutine to close out once all the output goroutines are
+	// done.  This must start after the wg.Add call.
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
 }
