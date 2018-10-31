@@ -9,18 +9,42 @@ type Router interface {
 }
 
 type Proxy interface {
-	Do(c *Context)
+	Do(c *Context) error
+	HttpErr(c *Context, code int, info string)
 }
 
-type DirectProxy struct{}
+type directProxy struct{}
+
+func (directProxy) HttpErr(c *Context, code int, info string) {
+	he := &HttpErr{
+		Code:       code,
+		ClientType: "Direct",
+		ClientName: "Host:",
+		TargetHost: c.HostPort,
+		Info:       info,
+	}
+	c.HttpErr(he)
+}
 
 type ExistProxy struct {
+	name      string
 	host      string
 	keepAlive bool
 }
 
-func NewExistProxy(host string, keepAlive bool) *ExistProxy {
-	return &ExistProxy{host, keepAlive}
+func NewExistProxy(name, host string, keepAlive bool) *ExistProxy {
+	return &ExistProxy{name, host, keepAlive}
+}
+
+func (p *ExistProxy) HttpErr(c *Context, code int, info string) {
+	he := &HttpErr{
+		Code:       code,
+		ClientType: "Exist",
+		ClientName: p.name,
+		TargetHost: c.HostPort,
+		Info:       info,
+	}
+	c.HttpErr(he)
 }
 
 type H2Proxy struct {
@@ -28,10 +52,21 @@ type H2Proxy struct {
 	idx    string
 }
 
-func (DirectProxy) Do(c *Context)   { c.Direct() }
-func (p *ExistProxy) Do(c *Context) { c.ProxyUp(p.host, p.keepAlive) }
-func (p *H2Proxy) Do(c *Context)    { p.client.Proxy(c, p.idx) }
+func (p *H2Proxy) HttpErr(c *Context, code int, info string) {
+	he := &HttpErr{
+		Code:       code,
+		ClientType: "H2",
+		ClientName: p.idx,
+		TargetHost: c.HostPort,
+		Info:       info,
+	}
+	c.HttpErr(he)
+}
 
-var _ Proxy = DirectProxy{}
-var _ Proxy = NewExistProxy("", false)
+func (p directProxy) Do(c *Context) error { return c.Direct() }
+func (p *ExistProxy) Do(c *Context) error { return c.ProxyUp(p.host, p.keepAlive) }
+func (p *H2Proxy) Do(c *Context) error    { return p.client.Proxy(c, p.idx) }
+
+var DirectProxy Proxy = directProxy{}
+var _ Proxy = new(ExistProxy)
 var _ Proxy = new(H2Proxy)

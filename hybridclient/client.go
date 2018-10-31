@@ -5,12 +5,19 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/empirefox/hybrid"
 	"github.com/empirefox/hybrid/hybridipfs"
-	"github.com/empirefox/hybrid/hybridutils"
 	"go.uber.org/zap"
+
+	inet "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-net"
 )
+
+const PathTokenPrefix = "/token/"
+
+type VerifyFunc func(peerID, token []byte) bool
 
 type Client struct {
 	log            *zap.Logger
@@ -18,6 +25,7 @@ type Client struct {
 	ipfs           *hybridipfs.Ipfs
 	hybrid         *hybrid.Hybrid
 	listener       net.Listener
+	listeners      []*hybridipfs.Listener
 	proxies        map[string]hybrid.Proxy
 	fileClients    map[string]*hybrid.FileClient
 	fsDisabled     map[string]bool
@@ -27,7 +35,7 @@ type Client struct {
 	token          []byte
 }
 
-func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http.Handler, localHandler http.Handler, log *zap.Logger) (*Client, error) {
+func NewClient(config *Config, hi *hybridipfs.Ipfs, verify VerifyFunc, localServers map[string]http.Handler, log *zap.Logger) (*Client, error) {
 	t, err := config.ConfigTree()
 	if err != nil {
 		return nil, err
@@ -38,7 +46,7 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 		config: *config,
 		ipfs:   hi,
 		proxies: map[string]hybrid.Proxy{
-			"DIRECT": hybrid.DirectProxy{},
+			"DIRECT": hybrid.DirectProxy,
 		},
 		fileClients:    make(map[string]*hybrid.FileClient, len(config.FileServers)),
 		fsDisabled:     parseEnvList("HYBRID_FILE_SERVERS_DISABLED"),
@@ -48,15 +56,8 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 		token:          []byte(config.Token),
 	}
 
-	// tls1.3 scalar
-	scalar, err := hybridutils.DecodeKey32(config.ScalarHex)
-	if err != nil {
-		return nil, err
-	}
-
 	h2 := hybrid.NewH2Client(hybrid.H2ClientConfig{
-		Log:    log,
-		Scalar: scalar,
+		Log: log,
 	})
 
 	// IpfsServers
@@ -73,12 +74,8 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 		// /hybrid/1.0 /token/ xxx
 		protocol := HybridIpfsProtocol + PathTokenPrefix + string(s.Token)
 		dialer := &hybrid.H2Dialer{
-			Dial:         func() (net.Conn, error) { return c.ipfs.Dial(s.Peer, protocol) },
-			NoTLS:        true,
-			ClientScalar: nil,
-			ServerPubkey: nil,
-			NoAuth:       true,
-			Token:        s.Token,
+			Name: s.Name,
+			Dial: func() (net.Conn, error) { return c.ipfs.Dial(s.Peer, protocol) },
 		}
 		h2Proxy, err := h2.AddDialer(dialer)
 		if err != nil {
@@ -114,7 +111,7 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 		if name == "" {
 			name = strings.Replace(s.Host, ":", "-", -1)
 		}
-		c.proxies[name] = hybrid.NewExistProxy(s.Host, s.KeepAlive)
+		c.proxies[name] = hybrid.NewExistProxy(name, s.Host, s.KeepAlive)
 	}
 
 	routers := make([]hybrid.Router, len(config.Routers))
@@ -138,12 +135,38 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 		localServers[config.Ipfs.GatewayServerName] = hi.GatewayServer()
 	}
 
-	c.hybrid = &hybrid.Hybrid{
-		Routers:      routers,
-		Proxies:      c.proxies,
-		LocalServers: localServers,
-		LocalHandler: localHandler,
+	cc := &hybrid.ContextConfig{
+		BufferPool:     hybrid.DefaultBufferPool,
+		TimeoutForCopy: time.Duration(config.TimeoutForCopyMS) * time.Millisecond,
 	}
+
+	c.hybrid = &hybrid.Hybrid{
+		Log:           log,
+		ContextConfig: cc,
+		Routers:       routers,
+		Proxies:       c.proxies,
+		LocalServers:  localServers,
+	}
+
+	listeners := make([]*hybridipfs.Listener, 0, len(config.Ipfs.ListenProtocols))
+	for _, p := range config.Ipfs.ListenProtocols {
+		// /hybrid/1.0/token/xxx
+		tokenPrefix := HybridIpfsProtocol + PathTokenPrefix
+		match := func(protocol string) bool { return strings.HasPrefix(protocol, tokenPrefix) }
+		// TODO what if p!=HybridIpfsProtocol
+		ln, err := hi.Listen(p, match)
+		if err != nil {
+			return nil, err
+		}
+
+		ln.SetVerify(func(is inet.Stream) bool {
+			target := []byte(is.Conn().RemotePeer().Pretty())
+			token := []byte(strings.TrimPrefix(string(is.Protocol()), tokenPrefix))
+			return verify(target, token)
+		})
+		listeners = append(listeners, ln)
+	}
+	c.listeners = listeners
 
 	if c.config.Bind != "" {
 		ln, err := net.Listen("tcp", c.config.Bind)
@@ -158,18 +181,42 @@ func NewClient(config *Config, hi *hybridipfs.Ipfs, localServers map[string]http
 }
 
 func (c *Client) StartServe() <-chan error {
+	length := len(c.listeners)
 	if c.listener != nil {
-		errc := make(chan error)
+		length++
+	}
+
+	if length == 0 {
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(length)
+
+	out := make(chan error, length)
+	for _, ln := range c.listeners {
+		go func() {
+			out <- c.hybrid.Serve(ln)
+			wg.Done()
+		}()
+	}
+
+	if c.listener != nil {
 		go func() {
 			err := hybrid.SimpleListenAndServe(c.listener, c.Proxy)
 			if err != nil {
 				c.log.Error("SimpleListenAndServe", zap.Error(err))
 			}
-			errc <- err
+			out <- err
+			wg.Done()
 		}()
-		return errc
 	}
-	return nil
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
 }
 
 func (c *Client) Close() (err error) {
@@ -187,4 +234,7 @@ func (c *Client) Close() (err error) {
 	return
 }
 
-func (c *Client) Proxy(conn net.Conn) { c.hybrid.Proxy(conn) }
+func (c *Client) Proxy(conn net.Conn) {
+	defer conn.Close()
+	c.hybrid.Proxy(hybrid.NewContextWithConn(c.hybrid.ContextConfig, conn))
+}

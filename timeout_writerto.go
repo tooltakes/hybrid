@@ -8,34 +8,51 @@ import (
 )
 
 type TimeoutWriterTo struct {
-	Conn         net.Conn
-	Timeout      time.Duration
-	TimeoutSleep time.Duration
+	src SetReadDeadlineReader
 }
 
-func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte) (written int64, err error) {
-	src := r.Conn
-	sleep := r.TimeoutSleep
+func NewTimeoutWriterTo(src SetReadDeadlineReader) *TimeoutWriterTo {
+	return &TimeoutWriterTo{src}
+}
+
+// WriteTo writes all Conn data to dst using buf.
+// Every time the Read after timeout, waits for next byte without timeout.
+func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte, timeout time.Duration) (written int64, err error) {
+	src := r.src
+
 	if buf == nil {
 		buf = make([]byte, 32<<10)
 	}
+
+	if timeout == 0 {
+		timeout = 200 * time.Millisecond
+	}
+
 	var flush = func() {}
 	if flusher, ok := dst.(http.Flusher); ok {
 		flush = flusher.Flush
 	}
 
-	// fast read 5 times, then slow read, then repeat after got bytes
-	i := 0
-	times := 5
-	timeout := 200 * time.Millisecond
+	afterTimeout := false
+	needFlush := false
+	var nr int
+	var er error
 	for {
-		src.SetReadDeadline(time.Now().Add(timeout))
-		nr, er := src.Read(buf)
+		if afterTimeout {
+			afterTimeout = false
+			nr, er = src.Read(buf[:1])
+		} else {
+			if err := src.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+				// no timeout, so fallback to io.Copy
+				// TODO check Flusher?
+				return io.CopyBuffer(dst, src, buf)
+			}
+			nr, er = src.Read(buf)
+		}
 		if nr > 0 {
-			i = 0
-			nw, ew := dst.Write(buf[0:nr])
+			nw, ew := dst.Write(buf[:nr])
 			if nw > 0 {
-				flush()
+				needFlush = true
 				written += int64(nw)
 			}
 			if ew != nil {
@@ -49,12 +66,11 @@ func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte) (written int64, err
 		}
 		if er != nil {
 			if nerr, ok := er.(net.Error); ok && nerr.Timeout() {
-				i++
-				if i > times && nr == 0 {
-					timeout = r.Timeout
-					time.Sleep(sleep)
+				if needFlush {
+					needFlush = false
+					flush()
 				}
-				err = nil
+				afterTimeout = true
 			} else {
 				if er != io.EOF {
 					err = er
@@ -64,4 +80,9 @@ func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte) (written int64, err
 		}
 	}
 	return written, err
+}
+
+type SetReadDeadlineReader interface {
+	Read(b []byte) (n int, err error)
+	SetReadDeadline(t time.Time) error
 }

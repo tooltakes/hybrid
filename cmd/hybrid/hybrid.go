@@ -81,7 +81,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	hi, listensErrc, err := hybridclient.NewIpfs(ctx, config, verify, log)
+	hi, err := hybridclient.NewIpfs(ctx, config, log)
 	if err != nil {
 		log.Fatal("NewIpfs", zap.Error(err))
 	}
@@ -91,18 +91,15 @@ func main() {
 		log.Fatal("ipfs.Connect", zap.Error(err))
 	}
 
-	var clientErrc <-chan error
-	if config.Bind != "" {
-		localServers := map[string]http.Handler{}
-		client, err := hybridclient.NewClient(config, hi, localServers, nil, log)
-		if err != nil {
-			log.Fatal("NewClient", zap.Error(err))
-		}
-		defer client.Close()
-		clientErrc = client.StartServe()
+	localServers := map[string]http.Handler{}
+	client, err := hybridclient.NewClient(config, hi, verify, localServers, log)
+	if err != nil {
+		log.Fatal("NewClient", zap.Error(err))
 	}
+	defer client.Close()
+	listensErrc := client.StartServe()
 
-	for err := range merge(clientErrc, listensErrc) {
+	for err := range merge(listensErrc) {
 		if err != nil {
 			log.Error("hybrid exit", zap.Error(err))
 		}

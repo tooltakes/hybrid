@@ -90,10 +90,10 @@ type Config struct {
 	Dev     bool   `env:"HYBRID_DEV"`
 	Bind    string `env:"HYBRID_BIND validate:"omitempty,tcp_addr"`
 
-	ServerFlushMS uint `default:"200"`
+	TimeoutForCopyMS uint `default:"200"`
 
-	ScalarHex string `validate:"len=64,hexadecimal"`
-	Token     string `validate:"omitempty,lte=732"`
+	// Token is fallback token that will be veried by servers, both Ipfs
+	Token string `validate:"omitempty,lte=732"`
 
 	Ipfs Ipfs
 

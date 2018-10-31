@@ -1,7 +1,9 @@
 package hybrid
 
 import (
+	"bufio"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
@@ -100,4 +102,12 @@ func (rw *ResponseWriter) WriteHeader(code int) {
 		ContentLength: rw.contentLength,
 	}, false)
 	rw.writer.Write(head)
+}
+
+func (rw *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	c, ok := rw.writer.(net.Conn)
+	if !ok {
+		return nil, nil, http.ErrHijacked
+	}
+	return c, bufio.NewReadWriter(bufio.NewReader(c), bufio.NewWriter(c)), nil
 }

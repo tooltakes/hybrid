@@ -27,7 +27,10 @@ func NewBufferPoolSize(size int) *BufferPool {
 func (p *BufferPool) Get() []byte  { return p.pool.Get().([]byte) }
 func (p *BufferPool) Put(b []byte) { p.pool.Put(b) }
 
-var DefaultBufferPool = NewBufferPool()
+var (
+	DefaultBufferPool   = NewBufferPool()
+	DefaultBufferPool1K = NewBufferPoolSize(1024)
+)
 
 func Copy(dst io.Writer, src io.Reader) (int64, error) {
 	buf := DefaultBufferPool.Get()

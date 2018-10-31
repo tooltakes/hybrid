@@ -1,50 +1,47 @@
 package hybrid
 
 import (
-	"net"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 type Hybrid struct {
-	Routers      []Router
-	Proxies      map[string]Proxy
-	LocalServers map[string]http.Handler
-	LocalHandler http.Handler
+	Log           *zap.Logger
+	ContextConfig *ContextConfig
+	Routers       []Router
+	Proxies       map[string]Proxy
+	LocalServers  map[string]http.Handler
 }
 
-func (h *Hybrid) Proxy(conn net.Conn) {
-	defer conn.Close()
-
-	c, err := ReadContext(conn)
+func (h *Hybrid) Proxy(c *Context, err error) {
 	if err != nil {
-		conn.Write([]byte("HTTP/1.1 400 Bad Request Connect\r\n\r\n"))
+		c.HybridHttpErr(http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if c.Hybrid != "" {
-		if h.LocalServers != nil {
-			handler, ok := h.LocalServers[c.Hybrid]
-			if ok {
-				handler.ServeHTTP(NewResponseWriter(c.Writer), c.Request)
-				return
+	if c.Domain.IsHybrid {
+		if c.Domain.IsEnd {
+			// xxx.over.-a.hybrid, xxx.with.hybrid, xxx.over.hybrid
+			// DialHostname=xxx
+			if h.LocalServers != nil {
+				handler, ok := h.LocalServers[c.Domain.DialHostname]
+				if ok {
+					handler.ServeHTTP(NewResponseWriter(c.Writer), c.Request)
+					return
+				}
 			}
-		}
-
-		if IsHybridLocal(c.Hybrid) {
-			if h.LocalHandler != nil {
-				h.LocalHandler.ServeHTTP(NewResponseWriter(c.Writer), c.Request)
-			} else {
-				conn.Write(StandardLocalServiceUnaviliable)
-			}
+			// dial: c.DialHostPort
+			h.proxy(c, DirectProxy)
 			return
 		}
 
-		p, ok := h.Proxies[c.Hybrid]
+		p, ok := h.Proxies[c.Domain.Next]
 		if !ok {
-			conn.Write([]byte("HTTP/1.1 404 Hybrid Not Found\r\n\r\n"))
+			c.HybridHttpErr(http.StatusNotFound, c.Domain.Next)
 			return
 		}
-		p.Do(c)
+		h.proxy(c, p)
 		return
 	}
 
@@ -53,13 +50,20 @@ func (h *Hybrid) Proxy(conn net.Conn) {
 			continue
 		}
 
-		proxy := rc.Route(c)
-		if proxy == nil {
+		p := rc.Route(c)
+		if p == nil {
 			continue
 		}
 
-		proxy.Do(c)
+		h.proxy(c, p)
 		return
 	}
-	conn.Write([]byte("HTTP/1.1 502 No Proxy Router\r\n\r\n"))
+	c.HybridHttpErr(http.StatusNotFound, "")
+}
+
+func (h *Hybrid) proxy(c *Context, p Proxy) {
+	err := p.Do(c)
+	if err != nil {
+		p.HttpErr(c, http.StatusBadGateway, err.Error())
+	}
 }

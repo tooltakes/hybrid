@@ -16,6 +16,7 @@ type FileClientConfig struct {
 	Redirect map[string]string
 }
 
+// FileClient implements both Router and Proxy.
 type FileClient struct {
 	log    *zap.Logger
 	config FileClientConfig
@@ -62,20 +63,20 @@ func (r *FileClient) Route(c *Context) Proxy {
 
 func (r *FileClient) Disabled() bool { return r == nil || r.config.Disabled }
 
-func (r *FileClient) Do(c *Context) {
+func (r *FileClient) Do(c *Context) error {
 	req := c.Request
 
 	if r.config.Redirect != nil {
-		newPath, ok := r.config.Redirect[c.Request.URL.Path]
+		newPath, ok := r.config.Redirect[req.URL.Path]
 		if ok {
 			// localRedirect gives a Moved Permanently response.
 			// It does not convert relative paths to absolute paths like Redirect does.
 			if q := req.URL.RawQuery; q != "" {
 				newPath += "?" + q
 			}
-			newPath += "\r\n"
+			newPath += "\r\n\r\n"
 			c.Writer.Write(append(Standard301Prefix, []byte(newPath)...))
-			return
+			return nil
 		}
 	}
 
@@ -86,14 +87,17 @@ func (r *FileClient) Do(c *Context) {
 	if req.Body != nil {
 		req.Body = ioutil.NopCloser(req.Body)
 	}
-	res, err := r.hfs.RoundTrip(req)
-	if err != nil {
-		r.log.Error("Failed to serve local CDN file", zap.Error(err), zap.Stringer("url", c.Request.URL))
-		c.Writer.Write(Standard502LocalCDN)
-		return
+
+	return c.PipeRoundTrip(r.hfs.RoundTrip)
+}
+
+func (p *FileClient) HttpErr(c *Context, code int, info string) {
+	he := &HttpErr{
+		Code:       code,
+		ClientType: "Zip",
+		ClientName: p.config.RootZip,
+		TargetHost: c.HostPort,
+		Info:       info,
 	}
-	err = res.Write(c.Writer)
-	if err != nil {
-		r.log.Error("Failed to write local CDN file to conn", zap.Error(err), zap.Stringer("url", c.Request.URL))
-	}
+	c.HttpErr(he)
 }
