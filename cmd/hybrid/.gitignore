@@ -1,4 +1,5 @@
 hybrid
 hybrid-arm
 hybrid-arm64
-golang-toxcore-arm-linux.json
+hybrid-x86
+hybrid-amd64

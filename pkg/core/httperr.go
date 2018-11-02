@@ -42,8 +42,7 @@ func (he *HttpErr) WriteResponse(w http.ResponseWriter) error {
 		w.Header().Set(k, v[0])
 	}
 	w.Header().Set("Content-Length", strconv.FormatInt(res.ContentLength, 10))
-	body := res.Body.(*bufferBody).Bytes()
-	_, err = w.Write(body)
+	_, err = res.Body.(*bufferBody).WriteTo(w)
 	return err
 }
 
@@ -78,7 +77,7 @@ type bufferBody struct {
 func newBufferBody(pool httputil.BufferPool) *bufferBody {
 	buf := pool.Get()
 	return &bufferBody{
-		Buffer: bytes.NewBuffer(buf),
+		Buffer: bytes.NewBuffer(buf[:0]),
 		buf:    buf,
 		pool:   pool,
 	}

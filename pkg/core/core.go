@@ -38,6 +38,7 @@ func (core *Core) Proxy(c *Context) {
 			c.HybridHttpErr(http.StatusNotFound, c.Domain.Next)
 			return
 		}
+
 		c.proxy(p)
 		return
 	}
@@ -55,5 +56,6 @@ func (core *Core) Proxy(c *Context) {
 		c.proxy(p)
 		return
 	}
-	c.HybridHttpErr(http.StatusNotFound, "")
+
+	c.proxy(DirectProxy)
 }

@@ -2,6 +2,7 @@ package hybridcore
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,7 +18,8 @@ import (
 )
 
 var (
-	StandardConnectOK = []byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+	// StandardConnectOK indicates Content-Length: -1
+	StandardConnectOK = []byte("HTTP/1.1 200 OK\r\n\r\n")
 
 	ErrRequestURI = errors.New("bad RequestURI")
 )
@@ -60,7 +62,9 @@ func NewContextFromHandler(cc *ContextConfig, w http.ResponseWriter, req *http.R
 }
 
 func newContext(cc *ContextConfig, req *http.Request, resp http.ResponseWriter, conn net.Conn) (*Context, error) {
-	if req.URL.Scheme == "" {
+	isConnect := req.Method == "CONNECT"
+	if !isConnect && req.URL.Scheme == "" {
+		// parsing CONNECT removed schema
 		return nil, ErrRequestURI
 	}
 
@@ -86,7 +90,7 @@ func newContext(cc *ContextConfig, req *http.Request, resp http.ResponseWriter, 
 
 		Request:      req,
 		UnsafeReader: unsafeReader,
-		Connect:      req.Method == "CONNECT",
+		Connect:      isConnect,
 		HasPort:      true,
 	}
 
@@ -242,7 +246,7 @@ func (c *Context) Direct() error {
 
 	req := c.Request
 	if c.Connect {
-		c.Writer.Write(StandardConnectOK)
+		c.writeConncectOK()
 	} else {
 		// must remove connection header
 		if req.Header != nil {
@@ -250,12 +254,11 @@ func (c *Context) Direct() error {
 		}
 		delete(req.Header, "Proxy-Connection")
 		req.Header.Set("Connection", "close")
-	}
-
-	// TODO modify stream to set Connection: close
-	err = c.SendRequest(remote, false)
-	if err != nil {
-		return err
+		// TODO modify stream to set Connection: close
+		err = c.SendRequest(remote, false)
+		if err != nil {
+			return err
+		}
 	}
 
 	c.PipeConn(remote)
@@ -279,6 +282,24 @@ func (c *Context) PipeTransport(tp http.RoundTripper) error {
 		return nil
 	}
 
+	if c.ResponseWriter != nil {
+		ctx := req.Context()
+		if cn, ok := c.ResponseWriter.(http.CloseNotifier); ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(ctx)
+			defer cancel()
+			notifyChan := cn.CloseNotify()
+			go func() {
+				select {
+				case <-notifyChan:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+		}
+		req.WithContext(ctx)
+	}
+
 	res, err := tp.RoundTrip(req)
 	if err != nil {
 		return err
@@ -294,32 +315,30 @@ func (c *Context) PipeTransport(tp http.RoundTripper) error {
 
 	// CONNECT below
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("Response %d", res.StatusCode)
+		body, _ := ioutil.ReadAll(res.Body)
+		return fmt.Errorf("Response %d, err: %s", res.StatusCode, body)
 	}
 
-	if c.Writer != nil {
-		c.Writer.Write(StandardConnectOK)
-		c.Copy(c.Writer, res.Body)
-		return nil
-	}
-
-	c.ResponseWriter.WriteHeader(http.StatusOK)
-	flusher, ok := c.ResponseWriter.(http.Flusher)
-	if ok {
-		flusher.Flush()
-	}
-	c.Copy(c.ResponseWriter, res.Body)
+	c.writeConncectOK()
+	c.copyFromRemote(res.Body)
 	return nil
 }
 
 // PipeConn waits for remote close. Used by final node. Must close remote after.
 func (c *Context) PipeConn(remote net.Conn) {
 	go c.copyToRemote(remote)
+	c.copyFromRemote(remote)
+}
 
+func (c *Context) writeConncectOK() {
 	if c.Writer != nil {
-		c.Copy(c.Writer, remote)
+		c.Writer.Write(StandardConnectOK)
 	} else {
-		c.Copy(c.ResponseWriter, remote)
+		c.ResponseWriter.WriteHeader(http.StatusOK)
+		flusher, ok := c.ResponseWriter.(http.Flusher)
+		if ok {
+			flusher.Flush()
+		}
 	}
 }
 
@@ -331,6 +350,14 @@ func (c *Context) copyToRemote(remote io.WriteCloser) {
 
 	c.Copy(remote, r)
 	remote.Close()
+}
+
+func (c *Context) copyFromRemote(remote io.Reader) {
+	if c.Writer != nil {
+		c.Copy(c.Writer, remote)
+	} else {
+		c.Copy(c.ResponseWriter, remote)
+	}
 }
 
 // Copy copies src to dst with BufferPool. Enable timeout read if src is net.Conn.

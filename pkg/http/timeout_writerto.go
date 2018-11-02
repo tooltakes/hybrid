@@ -40,6 +40,7 @@ func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte, timeout time.Durati
 	for {
 		if afterTimeout {
 			afterTimeout = false
+			src.SetReadDeadline(time.Time{})
 			nr, er = src.Read(buf[:1])
 		} else {
 			if err := src.SetReadDeadline(time.Now().Add(timeout)); err != nil {
