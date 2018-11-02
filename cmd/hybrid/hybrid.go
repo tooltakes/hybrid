@@ -1,14 +1,14 @@
 // visit client:
-// http://0.hybrid/index.html
+// http://with.0.hybrid/index.html
 //
 // visit server:
-// http://server_name_in_hybrid_json.hybrid/index.html
+// http://over.server_name_in_hybrid_json.hybrid/index.html
 //
 // visit host from special server:
-// http://192.168.2.6.server_name_in_hybrid_json.hybrid/index.html
+// http://192.168.2.6.over.server_name_in_hybrid_json.hybrid/index.html
 //
 // ssh over hybrid example:
-// ssh root@192.168.1.1 -o "ProxyCommand=nc -n -Xconnect -x127.0.0.1:7777 %h.server_name_in_hybrid_json.hybrid %p"
+// ssh root@192.168.1.1 -o "ProxyCommand=nc -n -Xconnect -x127.0.0.1:7777 %h.over.server_name_in_hybrid_json.hybrid %p"
 package main
 
 import (
@@ -17,12 +17,13 @@ import (
 	"os"
 	"sync"
 
-	"github.com/empirefox/hybrid/hybridauth"
-	"github.com/empirefox/hybrid/hybridclient"
-	"github.com/empirefox/hybrid/hybridutils"
+	"github.com/empirefox/hybrid/config"
+	"github.com/empirefox/hybrid/node"
+	"github.com/empirefox/hybrid/pkg/auth"
+	"github.com/empirefox/hybrid/pkg/utils"
 	"go.uber.org/zap"
 
-	ipfsConfig "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
+	ipfsconfig "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
 )
 
 type Verifier struct {
@@ -52,7 +53,7 @@ func main() {
 	}
 	defer log.Sync()
 
-	config, err := hybridclient.LoadConfig(nil)
+	config, err := hybridconfig.LoadConfig(nil)
 	if err != nil {
 		log.Fatal("LoadConfig", zap.Error(err))
 	}
@@ -61,7 +62,7 @@ func main() {
 	if err != nil {
 		log.Fatal("ConfigTree", zap.Error(err))
 	}
-	os.Setenv(ipfsConfig.EnvDir, t.IpfsPath)
+	os.Setenv(ipfsconfig.EnvDir, t.IpfsPath)
 
 	ed25519key, err := hybridutils.DecodeKey32(config.Ipfs.VerifyKeyHex)
 	if err != nil {
@@ -81,7 +82,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	hi, err := hybridclient.NewIpfs(ctx, config, log)
+	hi, err := hybridnode.NewIpfs(ctx, config, log)
 	if err != nil {
 		log.Fatal("NewIpfs", zap.Error(err))
 	}
@@ -92,12 +93,12 @@ func main() {
 	}
 
 	localServers := map[string]http.Handler{}
-	client, err := hybridclient.NewClient(config, hi, verify, localServers, log)
+	node, err := hybridnode.New(config, hi, verify, localServers, log)
 	if err != nil {
 		log.Fatal("NewClient", zap.Error(err))
 	}
-	defer client.Close()
-	listensErrc := client.StartServe()
+	defer node.Close()
+	listensErrc := node.StartServe()
 
 	for err := range merge(listensErrc) {
 		if err != nil {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/empirefox/hybrid/hybridzipfs"
+	"github.com/empirefox/hybrid/pkg/zipfs"
 )
 
 func main() {

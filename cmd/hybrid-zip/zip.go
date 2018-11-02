@@ -5,7 +5,7 @@ import (
 	"log"
 	"path/filepath"
 
-	"github.com/empirefox/hybrid/hybridzipfs"
+	"github.com/empirefox/hybrid/pkg/zipfs"
 )
 
 var (

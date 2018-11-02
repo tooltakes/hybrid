@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/empirefox/hybrid/hybridauth"
+	"github.com/empirefox/hybrid/pkg/auth"
 	"golang.org/x/crypto/ed25519"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
