@@ -7,23 +7,27 @@ import (
 	"time"
 )
 
+type FromWriterError struct{ error }
+
 type TimeoutWriterTo struct {
-	src SetReadDeadlineReader
+	SetReadDeadlineReadCloser
+	buf     []byte
+	timeout time.Duration
 }
 
-func NewTimeoutWriterTo(src SetReadDeadlineReader) *TimeoutWriterTo {
-	return &TimeoutWriterTo{src}
+func NewTimeoutWriterTo(src SetReadDeadlineReadCloser, buf []byte, timeout time.Duration) *TimeoutWriterTo {
+	return &TimeoutWriterTo{src, buf, timeout}
 }
 
 // WriteTo writes all Conn data to dst using buf.
 // Every time the Read after timeout, waits for next byte without timeout.
-func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte, timeout time.Duration) (written int64, err error) {
-	src := r.src
-
+func (r *TimeoutWriterTo) WriteTo(dst io.Writer) (written int64, err error) {
+	buf := r.buf
 	if buf == nil {
 		buf = make([]byte, 32<<10)
 	}
 
+	timeout := r.timeout
 	if timeout == 0 {
 		timeout = 200 * time.Millisecond
 	}
@@ -40,16 +44,15 @@ func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte, timeout time.Durati
 	for {
 		if afterTimeout {
 			afterTimeout = false
-			src.SetReadDeadline(time.Time{})
-			nr, er = src.Read(buf[:1])
-		} else {
-			if err := src.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-				// no timeout, so fallback to io.Copy
-				// TODO check Flusher?
-				return io.CopyBuffer(dst, src, buf)
+			n, e := r.read(buf[:1], 0)
+			if e == nil {
+				nr, er = r.read(buf[n:], timeout)
+				nr += n
 			}
-			nr, er = src.Read(buf)
+		} else {
+			nr, er = r.read(buf, timeout)
 		}
+
 		if nr > 0 {
 			nw, ew := dst.Write(buf[:nr])
 			if nw > 0 {
@@ -57,11 +60,11 @@ func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte, timeout time.Durati
 				written += int64(nw)
 			}
 			if ew != nil {
-				err = ew
+				err = FromWriterError{ew}
 				break
 			}
 			if nr != nw {
-				err = io.ErrShortWrite
+				err = FromWriterError{io.ErrShortWrite}
 				break
 			}
 		}
@@ -83,7 +86,17 @@ func (r *TimeoutWriterTo) WriteTo(dst io.Writer, buf []byte, timeout time.Durati
 	return written, err
 }
 
-type SetReadDeadlineReader interface {
+func (r *TimeoutWriterTo) read(buf []byte, timeout time.Duration) (n int, err error) {
+	if timeout == 0 {
+		r.SetReadDeadline(time.Time{})
+	} else {
+		r.SetReadDeadline(time.Now().Add(timeout))
+	}
+	return r.Read(buf)
+}
+
+type SetReadDeadlineReadCloser interface {
 	Read(b []byte) (n int, err error)
+	Close() error
 	SetReadDeadline(t time.Time) error
 }

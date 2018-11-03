@@ -3,7 +3,6 @@ package hybridproxy
 import (
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 
@@ -74,22 +73,14 @@ func (h2 *H2Client) Proxy(c *hybridcore.Context, idx string) error {
 		req.Header = make(http.Header)
 	}
 	if c.Connect {
-		req.ContentLength = -1
-		if req.Body == http.NoBody {
-			req.Body = ioutil.NopCloser(c.UnsafeReader)
-		} else {
-			req.Body = ioutil.NopCloser(req.Body)
-		}
-	} else {
-		// need all to be NopCloser, or RoundTrip will not return
-		req.Body = ioutil.NopCloser(req.Body)
+		req.Body = c.NopCloserBody()
 	}
 
 	// Host => authority|target, so the real schema can be ignored
 	if req.URL.Scheme == "https" {
-		req.Host = string(hybridcore.HostHttpsPrefix) + c.HostPort
+		req.Host = string(hybridcore.HostHttpsPrefix) + req.Host
 	} else {
-		req.Host = string(hybridcore.HostHttpPrefix) + c.HostPort
+		req.Host = string(hybridcore.HostHttpPrefix) + req.Host
 	}
 
 	// used for underline conn dial

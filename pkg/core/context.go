@@ -2,7 +2,6 @@ package hybridcore
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +24,7 @@ var (
 )
 
 type ContextConfig struct {
+	Transport      http.RoundTripper
 	BufferPool     httputil.BufferPool
 	TimeoutForCopy time.Duration
 }
@@ -45,6 +45,8 @@ type Context struct {
 	IP           net.IP
 	DialHostPort string
 	Domain       hybriddomain.Domain
+
+	nopCloser io.ReadCloser
 }
 
 func NewContextWithConn(cc *ContextConfig, conn net.Conn) (*Context, error) {
@@ -94,7 +96,9 @@ func newContext(cc *ContextConfig, req *http.Request, resp http.ResponseWriter, 
 		HasPort:      true,
 	}
 
-	if !c.Connect {
+	if c.Connect {
+		req.ContentLength = -1
+	} else {
 		// Do not keep-alive any reverse request.
 		// Server will auto add Connection: close?
 		// Every response add too?
@@ -105,6 +109,7 @@ func newContext(cc *ContextConfig, req *http.Request, resp http.ResponseWriter, 
 			}
 		}
 	}
+	req.RequestURI = ""
 
 	if req.Host == "" {
 		// TODO enable this:
@@ -196,23 +201,35 @@ func (c *Context) adjustRequestAndDialHost() {
 // SendRequest write Request to remote, nothing more.
 func (c *Context) SendRequest(remote net.Conn, withProxy bool) (err error) {
 	req := c.Request
-	if req.Body == http.NoBody {
-		// if not nil, req.Write will not return
-		req.Body = nil
-	} else {
-		req.Body = ioutil.NopCloser(req.Body)
+	if req.Body != http.NoBody {
+		req.Body = c.NopCloserBody()
 	}
 	if withProxy {
 		err = req.WriteProxy(remote)
 	} else {
 		err = req.Write(remote)
 	}
+	if err != nil {
+		if _, ok := err.(hybridhttp.FromWriterError); !ok {
+			// err from Request.Body
+			remote.Close()
+		}
+		return
+	}
+
+	c.copyToRemote(remote)
 	return
 }
 
 // ProxyUp dial to exist http server, SendRequest to remote, waits for remote close.
 // Used by final node.
-func (c *Context) ProxyUp(proxyaddr string, keepAlive bool) error {
+func (c *Context) ProxyUp(proxyaddr string, tp http.RoundTripper, keepAlive bool) error {
+	if !c.Connect && c.Writer == nil {
+		// reverse to c.ResponseWriter
+		c.ReverseToResponse(tp)
+		return nil
+	}
+
 	remote, err := net.Dial("tcp", proxyaddr)
 	if err != nil {
 		return err
@@ -226,18 +243,55 @@ func (c *Context) ProxyUp(proxyaddr string, keepAlive bool) error {
 		req.Header.Set("Connection", "close")
 	}
 
-	err = c.SendRequest(remote, true)
-	if err != nil {
-		return err
+	go c.SendRequest(remote, true)
+	if c.Connect && c.Writer == nil {
+		// connect to c.ResponseWriter
+		bw := bufio.NewReader(remote)
+		res, err := http.ReadResponse(bw, req)
+		if err != nil {
+			return err
+		}
+		res.Body = http.NoBody
+
+		if res.StatusCode != http.StatusOK {
+			body, _ := ioutil.ReadAll(res.Body)
+			return fmt.Errorf("Response %d, err: %s", res.StatusCode, body)
+		}
+
+		c.writeConncectOK()
+		if n := bw.Buffered(); n > 0 {
+			// TODO will this happen?
+			b, err := bw.Peek(n)
+			if err != nil {
+				return err
+			}
+			_, err = c.writeBytesFromRemote(b)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
-	c.PipeConn(remote)
+	c.copyFromRemote(remote)
 	return nil
+}
+
+func (c *Context) writeBytesFromRemote(b []byte) (int, error) {
+	if c.Writer != nil {
+		return c.Writer.Write(b)
+	}
+	return c.ResponseWriter.Write(b)
 }
 
 // Direct dial to final target, SendRequest to remote, waits for remote close.
 // Used by final node.
 func (c *Context) Direct() error {
+	if !c.Connect && c.Writer == nil {
+		// reverse to c.ResponseWriter
+		c.ReverseToResponse(c.Transport)
+		return nil
+	}
+
 	remote, err := net.Dial("tcp", c.DialHostPort)
 	if err != nil {
 		return err
@@ -247,21 +301,21 @@ func (c *Context) Direct() error {
 	req := c.Request
 	if c.Connect {
 		c.writeConncectOK()
-	} else {
-		// must remove connection header
-		if req.Header != nil {
-			req.Header = make(http.Header)
-		}
-		delete(req.Header, "Proxy-Connection")
-		req.Header.Set("Connection", "close")
-		// TODO modify stream to set Connection: close
-		err = c.SendRequest(remote, false)
-		if err != nil {
-			return err
-		}
+		go c.copyToRemote(remote)
+		c.copyFromRemote(remote)
+		return nil
 	}
 
-	c.PipeConn(remote)
+	// reverse to c.Writer
+	// must remove connection header
+	if req.Header != nil {
+		req.Header = make(http.Header)
+	}
+	delete(req.Header, "Proxy-Connection")
+	req.Header.Set("Connection", "close")
+	// TODO modify stream to set Connection: close
+	go c.SendRequest(remote, false)
+	c.copyFromRemote(remote)
 	return nil
 }
 
@@ -271,33 +325,8 @@ func (c *Context) PipeTransport(tp http.RoundTripper) error {
 
 	if !c.Connect && c.Writer == nil {
 		// reverse to c.ResponseWriter
-		rp := httputil.ReverseProxy{
-			Director:       func(*http.Request) {},
-			Transport:      tp,
-			FlushInterval:  0,
-			BufferPool:     c.BufferPool,
-			ModifyResponse: nil,
-		}
-		rp.ServeHTTP(c.ResponseWriter, req)
+		c.ReverseToResponse(tp)
 		return nil
-	}
-
-	if c.ResponseWriter != nil {
-		ctx := req.Context()
-		if cn, ok := c.ResponseWriter.(http.CloseNotifier); ok {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithCancel(ctx)
-			defer cancel()
-			notifyChan := cn.CloseNotify()
-			go func() {
-				select {
-				case <-notifyChan:
-					cancel()
-				case <-ctx.Done():
-				}
-			}()
-		}
-		req.WithContext(ctx)
 	}
 
 	res, err := tp.RoundTrip(req)
@@ -324,10 +353,15 @@ func (c *Context) PipeTransport(tp http.RoundTripper) error {
 	return nil
 }
 
-// PipeConn waits for remote close. Used by final node. Must close remote after.
-func (c *Context) PipeConn(remote net.Conn) {
-	go c.copyToRemote(remote)
-	c.copyFromRemote(remote)
+func (c *Context) ReverseToResponse(tp http.RoundTripper) {
+	rp := httputil.ReverseProxy{
+		Director:       func(r *http.Request) {},
+		Transport:      tp,
+		FlushInterval:  c.TimeoutForCopy,
+		BufferPool:     c.BufferPool,
+		ModifyResponse: nil,
+	}
+	rp.ServeHTTP(c.ResponseWriter, c.Request)
 }
 
 func (c *Context) writeConncectOK() {
@@ -343,12 +377,7 @@ func (c *Context) writeConncectOK() {
 }
 
 func (c *Context) copyToRemote(remote io.WriteCloser) {
-	r := c.Request.Body
-	if r == nil || r == http.NoBody {
-		r = c.UnsafeReader
-	}
-
-	c.Copy(remote, r)
+	c.Copy(remote, c.bodyReader())
 	remote.Close()
 }
 
@@ -360,13 +389,28 @@ func (c *Context) copyFromRemote(remote io.Reader) {
 	}
 }
 
+func (c *Context) NopCloserBody() io.ReadCloser {
+	if c.nopCloser == nil {
+		c.nopCloser = ioutil.NopCloser(c.bodyReader())
+	}
+	return c.nopCloser
+}
+
+func (c *Context) bodyReader() io.ReadCloser {
+	r := c.Request.Body
+	if r == nil || r == http.NoBody {
+		r = c.UnsafeReader
+	}
+	return r
+}
+
 // Copy copies src to dst with BufferPool. Enable timeout read if src is net.Conn.
 func (c *Context) Copy(dst io.Writer, src io.Reader) (int64, error) {
 	buf := c.BufferPool.Get()
 	defer c.BufferPool.Put(buf)
-	dr, ok := src.(hybridhttp.SetReadDeadlineReader)
+	dr, ok := src.(hybridhttp.SetReadDeadlineReadCloser)
 	if ok {
-		return hybridhttp.NewTimeoutWriterTo(dr).WriteTo(dst, buf, c.TimeoutForCopy)
+		return hybridhttp.NewTimeoutWriterTo(dr, buf, c.TimeoutForCopy).WriteTo(dst)
 	}
 	return io.CopyBuffer(dst, src, buf)
 }

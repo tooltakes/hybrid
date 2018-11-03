@@ -1,6 +1,7 @@
 package hybridcore
 
 import (
+	"context"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -17,6 +18,25 @@ type Core struct {
 }
 
 func (core *Core) Proxy(c *Context) {
+	if c.ResponseWriter != nil {
+		req := c.Request
+		ctx := req.Context()
+		if cn, ok := c.ResponseWriter.(http.CloseNotifier); ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(ctx)
+			defer cancel()
+			notifyChan := cn.CloseNotify()
+			go func() {
+				select {
+				case <-notifyChan:
+					cancel()
+				case <-ctx.Done():
+				}
+			}()
+		}
+		req.WithContext(ctx)
+	}
+
 	if c.Domain.IsHybrid {
 		if c.Domain.IsEnd {
 			// xxx.over.-a.hybrid, xxx.with.hybrid, xxx.over.hybrid
@@ -29,7 +49,12 @@ func (core *Core) Proxy(c *Context) {
 				}
 			}
 			// dial: c.DialHostPort
-			c.proxy(DirectProxy)
+			if c.Domain.IsOver {
+				core.routeProxy(c)
+				return
+			}
+
+			c.HybridHttpErr(http.StatusNotFound, "")
 			return
 		}
 
@@ -43,6 +68,10 @@ func (core *Core) Proxy(c *Context) {
 		return
 	}
 
+	core.routeProxy(c)
+}
+
+func (core *Core) routeProxy(c *Context) {
 	for _, rc := range core.Routers {
 		if rc.Disabled() {
 			continue

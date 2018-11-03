@@ -116,7 +116,11 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 		if name == "" {
 			name = strings.Replace(s.Host, ":", "-", -1)
 		}
-		n.proxies[name] = hybridcore.NewExistProxy(name, s.Host, s.KeepAlive)
+		p, err := hybridcore.NewExistProxy(name, s.Host, s.KeepAlive)
+		if err != nil {
+			return nil, err
+		}
+		n.proxies[name] = p
 	}
 
 	routers := make([]hybridcore.Router, len(config.Routers))
@@ -141,6 +145,7 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 	}
 
 	cc := &hybridcore.ContextConfig{
+		Transport:      http.DefaultTransport,
 		BufferPool:     hybridbufpool.Default,
 		TimeoutForCopy: time.Duration(config.TimeoutForCopyMS) * time.Millisecond,
 	}

@@ -83,6 +83,30 @@ var DomainSuccessTests = []DomainSuccessTest{
 		},
 	},
 	{
+		hostname: "github.com.over.vps-ipfs.hybrid",
+		domain: Domain{
+			IsHybrid:     true,
+			IsOver:       true,
+			DialHostname: "github.com",
+			Next:         "vps-ipfs",
+			IsBegin:      true,
+			IsEnd:        false,
+			NextHostname: "github.com.over.-vps-ipfs.hybrid",
+		},
+	},
+	{
+		hostname: "github.com.over.-vps-ipfs.hybrid",
+		domain: Domain{
+			IsHybrid:     true,
+			IsOver:       true,
+			DialHostname: "github.com",
+			Next:         "",
+			IsBegin:      false,
+			IsEnd:        true,
+			NextHostname: "github.com",
+		},
+	},
+	{
 		hostname: "192.168.22.22.over.-a.hybrid",
 		domain: Domain{
 			IsHybrid:     true,
