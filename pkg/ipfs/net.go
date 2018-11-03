@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"sync"
-	"time"
 
 	inet "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-net"
 	p2pnet "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-net"
@@ -164,90 +163,3 @@ func (lst *Listener) close() {
 
 func (lst *Listener) Protocol() string         { return lst.protocol }
 func (lst *Listener) Context() context.Context { return lst.ctx }
-
-type Pinger struct {
-	lastSeen  time.Time
-	roundtrip time.Duration
-	cancel    func()
-	mu        sync.Mutex
-	isClosed  bool
-}
-
-func (p *Pinger) LastSeen() time.Time {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.lastSeen
-}
-
-func (p *Pinger) Roundtrip() time.Duration {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.roundtrip
-}
-
-func (p *Pinger) Close() error {
-	p.cancel()
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.isClosed = true
-	return nil
-}
-
-// Ping returns a new Pinger. It can be used to
-// query the time the remote was last seen. It will be
-// constantly updated until close is called on it.
-func (hi *Ipfs) Ping(addr string, second uint8) (*Pinger, error) {
-	ipfsNode, err := hi.getDaemonNode()
-	if err != nil {
-		return nil, err
-	}
-
-	peerID, err := ipfspeer.IDB58Decode(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx, cancel := context.WithCancel(hi.ctx)
-	pingCh, err := ipfsNode.Ping.Ping(ctx, peerID)
-	if err != nil {
-		// If peer cannot be rached, we will bail out here.
-		cancel()
-		return nil, err
-	}
-
-	pinger := &Pinger{
-		lastSeen: time.Now(),
-		cancel:   cancel,
-	}
-
-	// pingCh will also be closed by ipfs's Ping().
-	// This will happen once cancel() is called.
-	go func() {
-		if second == 0 {
-			second = 1
-		}
-		dur := time.Duration(second) * time.Second
-
-		sleep := true
-		for roundtrip := range pingCh {
-			pinger.mu.Lock()
-			pinger.roundtrip = roundtrip
-			pinger.lastSeen = time.Now()
-
-			isClosed := pinger.isClosed
-			pinger.mu.Unlock()
-
-			if isClosed {
-				break
-			}
-
-			if sleep {
-				time.Sleep(dur)
-			}
-			sleep = !sleep
-		}
-	}()
-
-	return pinger, nil
-}
