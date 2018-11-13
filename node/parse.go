@@ -1,4 +1,4 @@
-package hybridnode
+package node
 
 import (
 	"fmt"
@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/empirefox/hybrid/config"
-	"github.com/empirefox/hybrid/pkg/proxy"
 	"github.com/empirefox/hybrid/pkg/core"
+	"github.com/empirefox/hybrid/pkg/proxy"
 	"go.uber.org/zap"
 
 	peer "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-peer"
@@ -26,7 +26,7 @@ type ipfsServer struct {
 	Token    []byte
 }
 
-func newIpfsServer(raw hybridconfig.IpfsServer, token []byte) (*ipfsServer, error) {
+func newIpfsServer(raw config.IpfsServer, token []byte) (*ipfsServer, error) {
 	id, err := peer.IDB58Decode(raw.Peer)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func parseEnvList(name string) map[string]bool {
 	return list
 }
 
-func (n *Node) newRouter(raw hybridconfig.RouterItem) (hybridcore.Router, error) {
+func (n *Node) newRouter(raw config.RouterItem) (core.Router, error) {
 	if raw.Adp != nil && raw.IPNet == nil {
 		return n.newAdpRouter(raw.Name, raw.Adp)
 	}
@@ -67,8 +67,8 @@ func (n *Node) newRouter(raw hybridconfig.RouterItem) (hybridcore.Router, error)
 	return nil, fmt.Errorf("one and only one router can be set in RouterItem(%s)", raw.Name)
 }
 
-func (n *Node) newAdpRouter(name string, raw *hybridconfig.AdpRouter) (*hybridproxy.AdpRouter, error) {
-	config := hybridproxy.AdpRouterConfig{
+func (n *Node) newAdpRouter(name string, raw *config.AdpRouter) (*proxy.AdpRouter, error) {
+	config := proxy.AdpRouterConfig{
 		Log:                 n.log,
 		Disabled:            n.routerDisabled[name],
 		EtcHostsIPAsBlocked: raw.EtcHostsIPAsBlocked,
@@ -106,7 +106,7 @@ func (n *Node) newAdpRouter(name string, raw *hybridconfig.AdpRouter) (*hybridpr
 		config.TxtRules = txt
 	}
 
-	return hybridproxy.NewAdpRouter(config)
+	return proxy.NewAdpRouter(config)
 }
 
 func (n *Node) readRulesDir(dirname string) ([][]byte, error) {
@@ -150,7 +150,7 @@ type netRouter struct {
 	FileTest  string
 }
 
-func (n *Node) newNetRouter(name string, raw *hybridconfig.IPNetRouter) (*hybridproxy.IPNetRouter, error) {
+func (n *Node) newNetRouter(name string, raw *config.IPNetRouter) (*proxy.IPNetRouter, error) {
 	ips := make([]net.IP, len(raw.IPs))
 	for i, ipr := range raw.IPs {
 		ip := net.ParseIP(ipr)
@@ -170,7 +170,7 @@ func (n *Node) newNetRouter(name string, raw *hybridconfig.IPNetRouter) (*hybrid
 		nets[i] = cidr
 	}
 
-	router := hybridproxy.IPNetRouter{
+	router := proxy.IPNetRouter{
 		Skip: n.routerDisabled[name],
 		IPs:  ips,
 		Nets: nets,

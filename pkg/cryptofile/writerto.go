@@ -1,4 +1,4 @@
-package hybridcryptofile
+package cryptofile
 
 import (
 	"crypto/cipher"

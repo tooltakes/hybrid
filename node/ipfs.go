@@ -1,4 +1,4 @@
-package hybridnode
+package node
 
 import (
 	"context"
@@ -12,38 +12,38 @@ import (
 	"github.com/ipsn/go-ipfs/core"
 )
 
-func NewIpfs(ctx context.Context, config *hybridconfig.Config, log *zap.Logger) (*hybridipfs.Ipfs, error) {
-	apiListenAddr, err := parseTCPMultiaddr(config.Ipfs.FakeApiListenAddr)
+func NewIpfs(ctx context.Context, c *config.Config, log *zap.Logger) (*ipfs.Ipfs, error) {
+	apiListenAddr, err := parseTCPMultiaddr(c.Ipfs.FakeApiListenAddr)
 	if err != nil {
 		log.Error("Ipfs.FakeApiListenAddr", zap.Error(err))
 		return nil, err
 	}
 
-	gatewayAddr, err := parseTCPMultiaddr(config.Bind)
+	gatewayAddr, err := parseTCPMultiaddr(c.Bind)
 	if err != nil {
 		log.Error("Config.Bind", zap.Error(err))
 		return nil, err
 	}
 
-	t, err := config.ConfigTree()
+	t, err := c.ConfigTree()
 	if err != nil {
 		log.Error("ConfigTree", zap.Error(err))
 		return nil, err
 	}
 
-	ipfsConfig := &hybridipfs.Config{
+	ipfsConfig := &ipfs.Config{
 		FakeApiListenAddr: apiListenAddr,
 		GatewayListenAddr: gatewayAddr,
-		ExcludeIPNS:       func(host string) bool { return strings.HasSuffix(host, hybriddomain.HybridSuffix) },
+		ExcludeIPNS:       func(host string) bool { return strings.HasSuffix(host, domain.HybridSuffix) },
 
 		RepoPath:         t.IpfsPath,
-		Profile:          config.Ipfs.Profile,
-		AutoMigrate:      config.Ipfs.AutoMigrate,
-		EnableIPNSPubSub: config.Ipfs.EnableIPNSPubSub,
-		EnableFloodSub:   config.Ipfs.EnableFloodSub,
-		EnableMultiplex:  config.Ipfs.EnableMultiplex,
+		Profile:          c.Ipfs.Profile,
+		AutoMigrate:      c.Ipfs.AutoMigrate,
+		EnableIPNSPubSub: c.Ipfs.EnableIPNSPubSub,
+		EnablePubSub:     c.Ipfs.EnablePubSub,
+		EnableMultiplex:  c.Ipfs.EnableMultiplex,
 	}
-	hi, err := hybridipfs.NewIpfs(ctx, ipfsConfig)
+	hi, err := ipfs.NewIpfs(ctx, ipfsConfig)
 	if err != nil {
 		log.Error("NewNode", zap.Error(err))
 		return nil, err

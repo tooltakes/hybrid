@@ -1,4 +1,4 @@
-package hybridcore
+package core
 
 import (
 	"fmt"

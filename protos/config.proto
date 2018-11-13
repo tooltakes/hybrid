@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package protos;
+option go_package = "github.com/empirefox/hybrid/config";
+
+message ConfigTree {
+  string version = 1;
+  string root_name = 2;
+  string root_path = 3;
+  string config_name = 4;
+  string config_path = 5;
+  string ipfs_name = 6;
+  string ipfs_path = 7;
+  string store_name = 8;
+  string store_path = 9;
+  string files_root_name = 10;
+  string files_root_path = 11;
+  string rules_root_name = 12;
+  string rules_root_path = 13;
+}

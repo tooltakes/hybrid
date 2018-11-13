@@ -1,4 +1,4 @@
-package hybridconfig
+package config
 
 import (
 	"encoding/json"

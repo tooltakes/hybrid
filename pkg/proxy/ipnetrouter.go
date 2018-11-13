@@ -1,4 +1,4 @@
-package hybridproxy
+package proxy
 
 import (
 	"net"
@@ -15,13 +15,13 @@ type IPNetRouter struct {
 	// FileClient test Matched host file, then proxy it if test ok.
 	FileClient *FileProxyRouterClient
 
-	Matched   hybridcore.Proxy
-	Unmatched hybridcore.Proxy
+	Matched   core.Proxy
+	Unmatched core.Proxy
 }
 
 func (r *IPNetRouter) Disabled() bool { return r.Skip }
 
-func (r *IPNetRouter) Route(c *hybridcore.Context) hybridcore.Proxy {
+func (r *IPNetRouter) Route(c *core.Context) core.Proxy {
 	for _, i := range r.IPs {
 		if i.Equal(c.IP) {
 			if p := r.FileClient.Route(c); p != nil {

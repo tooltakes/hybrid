@@ -1,4 +1,4 @@
-package hybridhttp
+package netutil
 
 import (
 	"net"
@@ -9,7 +9,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-func SimpleListenAndServe(listener net.Listener, serveConn func(c net.Conn)) error {
+func SimpleServe(listener net.Listener, serveConn func(c net.Conn)) error {
 	var tempDelay time.Duration // how long to sleep on accept failure
 	for {
 		c, e := listener.Accept()

@@ -1,7 +1,10 @@
-package hybridauth
+package auth
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -16,24 +19,15 @@ func (r *reader) Read(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-type verifyCheckKeyer struct {
-	verifyKey uint32
-	revoked   string
-}
-
-func (vck *verifyCheckKeyer) VerifyKey(id uint32) ([]byte, bool) {
-	if id == vck.verifyKey {
-		return pub, true
+func newGetKeyFunc(id uint64) GetKeyFunc {
+	valid := make([]byte, 8)
+	binary.BigEndian.PutUint64(valid, id)
+	return func(keyid []byte) (key []byte, err error) {
+		if bytes.Equal(keyid, valid) {
+			return pub, nil
+		}
+		return nil, fmt.Errorf("valid: %x, but got: %x", valid, keyid)
 	}
-	return nil, false
-}
-func (vck *verifyCheckKeyer) Revoked(id []byte) bool {
-	return string(id) == vck.revoked
-}
-
-func newVerifier(verifyKey uint32, revoked string) *Verifier {
-	vck := &verifyCheckKeyer{verifyKey, revoked}
-	return &Verifier{vck, vck}
 }
 
 func decodeKey(s string) []byte {
@@ -49,7 +43,7 @@ var (
 
 func TestAuth(t *testing.T) {
 	s := &Signer{
-		KeyID: 100,
+		KeyID: KeyIDFromUint64(100),
 		Key:   priv,
 		NonceSource: &NonceSource{
 			Len:  32,
@@ -65,18 +59,16 @@ func TestAuth(t *testing.T) {
 		t.Errorf("should create issuer: %v", err)
 		return
 	}
-
 	claims := &jwt.Claims{
 		Audience: jwt.Audience([]string{"toxpub1"}),
 	}
-
 	tok, err := issuer.Issue(claims)
 	if err != nil {
 		t.Errorf("should issue ok: %v", err)
 		return
 	}
 
-	allok := newVerifier(100, "toxpub2")
+	allok := newGetKeyFunc(100)
 	claims, err = allok.Verify([]byte("toxpub1"), []byte(tok))
 	if err != nil {
 		t.Errorf("should Verify ok: %v", err)
@@ -88,17 +80,17 @@ func TestAuth(t *testing.T) {
 		return
 	}
 
-	fail := newVerifier(100, "toxpub1")
-	claims, err = fail.Verify([]byte("toxpub1"), []byte(tok))
+	fail := newGetKeyFunc(100)
+	claims, err = fail.Verify([]byte("toxpub2"), []byte(tok))
 	if err == nil {
-		t.Errorf("should Verify fail: %v")
+		t.Errorf("should Verify fail")
 		return
 	}
 
-	fail = newVerifier(101, "toxpub2")
+	fail = newGetKeyFunc(101)
 	claims, err = fail.Verify([]byte("toxpub1"), []byte(tok))
 	if err == nil {
-		t.Errorf("should Verify fail: %v")
+		t.Errorf("should Verify fail")
 		return
 	}
 }

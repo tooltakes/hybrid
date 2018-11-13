@@ -1,4 +1,4 @@
-package hybridproxy
+package proxy
 
 import (
 	"io"
@@ -26,14 +26,14 @@ type FileClientConfig struct {
 type FileProxyRouterClient struct {
 	log    *zap.Logger
 	config FileClientConfig
-	hfs    *hybridzipfs.GzipHttpfs
+	hfs    *zipfs.GzipHttpfs
 	io.Closer
 }
 
 func NewFileProxyRouterClient(config FileClientConfig) (*FileProxyRouterClient, error) {
-	hfs, closer, err := hybridzipfs.New(config.RootZip + ".zip")
+	hfs, closer, err := zipfs.New(config.RootZip + ".zip")
 	if err != nil {
-		config.Log.Error("hybridzipfs.New", zap.String("RootZip", config.RootZip), zap.Error(err))
+		config.Log.Error("zipfs.New", zap.String("RootZip", config.RootZip), zap.Error(err))
 		return nil, err
 	}
 
@@ -46,7 +46,7 @@ func NewFileProxyRouterClient(config FileClientConfig) (*FileProxyRouterClient, 
 }
 
 // Route implements Router
-func (r *FileProxyRouterClient) Route(c *hybridcore.Context) hybridcore.Proxy {
+func (r *FileProxyRouterClient) Route(c *core.Context) core.Proxy {
 	if r == nil {
 		return nil
 	}
@@ -72,7 +72,7 @@ func (r *FileProxyRouterClient) Route(c *hybridcore.Context) hybridcore.Proxy {
 func (r *FileProxyRouterClient) Disabled() bool { return r == nil || r.config.Disabled }
 
 // Do implements Proxy
-func (r *FileProxyRouterClient) Do(c *hybridcore.Context) error {
+func (r *FileProxyRouterClient) Do(c *core.Context) error {
 	req := c.Request
 
 	if r.config.Redirect != nil {
@@ -101,8 +101,8 @@ func (r *FileProxyRouterClient) Do(c *hybridcore.Context) error {
 }
 
 // HttpErr implements Proxy
-func (p *FileProxyRouterClient) HttpErr(c *hybridcore.Context, code int, info string) {
-	he := &hybridcore.HttpErr{
+func (p *FileProxyRouterClient) HttpErr(c *core.Context, code int, info string) {
+	he := &core.HttpErr{
 		Code:       code,
 		ClientType: "Zip",
 		ClientName: p.config.RootZip,

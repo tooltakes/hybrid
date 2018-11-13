@@ -1,4 +1,4 @@
-package hybridipfs
+package ipfs
 
 import (
 	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"

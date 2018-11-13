@@ -13,130 +13,133 @@ package main
 
 import (
 	"context"
-	"net/http"
+	"fmt"
+	"io"
+	"log"
+	"net"
 	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
-	"github.com/empirefox/hybrid/config"
-	"github.com/empirefox/hybrid/node"
-	"github.com/empirefox/hybrid/pkg/auth"
-	"github.com/empirefox/hybrid/pkg/utils"
-	"go.uber.org/zap"
-
-	ipfsconfig "github.com/ipsn/go-ipfs/gxlibs/github.com/ipfs/go-ipfs-config"
+	"github.com/empirefox/hybrid/grpc"
+	"github.com/empirefox/hybrid/pkg/zapsuit"
 )
 
-type Verifier struct {
-	// public key
-	ed25519key []byte
-	revoked    map[string]bool
-}
-
-func NewVerifier(ed25519key []byte, revoked []string) *Verifier {
-	verifier := Verifier{
-		ed25519key: ed25519key,
-		revoked:    make(map[string]bool, len(revoked)),
-	}
-	for _, r := range revoked {
-		verifier.revoked[r] = true
-	}
-	return &verifier
-}
-
-func (v *Verifier) VerifyKey(id uint32) ([]byte, bool) { return v.ed25519key, true }
-func (v *Verifier) Revoked(id []byte) bool             { return v.revoked[string(id)] }
-
 func main() {
-	log, err := zap.NewDevelopment()
+	err := zapsuit.RegisterTCPSink()
 	if err != nil {
-		panic(err)
-	}
-	defer log.Sync()
-
-	config, err := hybridconfig.LoadConfig(nil)
-	if err != nil {
-		log.Fatal("LoadConfig", zap.Error(err))
-	}
-
-	t, err := config.ConfigTree()
-	if err != nil {
-		log.Fatal("ConfigTree", zap.Error(err))
-	}
-	os.Setenv(ipfsconfig.EnvDir, t.IpfsPath)
-
-	ed25519key, err := hybridutils.DecodeKey32(config.Ipfs.VerifyKeyHex)
-	if err != nil {
-		log.Fatal("Ipfs.VerifyKeyHex", zap.Error(err))
-	}
-
-	// verify using ed25519key
-	ver := NewVerifier(ed25519key[:], config.Ipfs.Revoked)
-	verifier := hybridauth.Verifier{ver, ver}
-	verify := func(peerID, token []byte) bool {
-		_, err := verifier.Verify(peerID, token)
-		if err != nil {
-			log.Info("Verify", zap.ByteString("peerID", peerID), zap.Error(err))
-		}
-		return err == nil
+		log.Fatalf("register zap TCP sink: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	hi, err := hybridnode.NewIpfs(ctx, config, log)
+	intrh, ctx := setupInterruptHandler(ctx)
+	defer intrh.Close()
+
+	s, err := grpc.NewServer(grpc.Config{
+		Context:          ctx,
+		Listen:           net.Listen,
+		MinVerifyKeyLife: 0, // use default
+		MaxVerifyKeyLife: 0, // use default
+		BindSeqStart:     0,
+		ConfigBindId:     0,
+	})
 	if err != nil {
-		log.Fatal("NewIpfs", zap.Error(err))
+		log.Fatalf("grpc.NewServer: %v", err)
 	}
 
-	err = hi.Connect()
+	// use empty Root means $HOME/.hybrid
+	_, err = s.Start(context.Background(), &grpc.StartRequest{Root: ""})
 	if err != nil {
-		log.Fatal("ipfs.Connect", zap.Error(err))
+		log.Fatalf("grpc.Server.Start: %v", err)
 	}
 
-	localServers := map[string]http.Handler{}
-	node, err := hybridnode.New(config, hi, verify, localServers, log)
-	if err != nil {
-		log.Fatal("NewClient", zap.Error(err))
-	}
-	defer node.Close()
-	listensErrc := node.StartServe()
+	go func() {
+		for {
+			_, err := s.WaitUntilStopped(context.Background(), nil)
+			if err != nil {
+				log.Printf("service stopped with err: %v", err)
+			}
+		}
+	}()
 
-	for err := range merge(listensErrc) {
+	grpcBind := os.Getenv("HYBRID_GRPC_BIND")
+	if grpcBind != "" {
+		ln, err := net.Listen("tcp", grpcBind)
 		if err != nil {
-			log.Error("hybrid exit", zap.Error(err))
+			log.Fatalf("listener on %s err: %v", grpcBind, err)
+		}
+		err = s.ServeGrpc(ln)
+		if err != nil {
+			log.Fatalf("ServeGrpc err: %v", err)
 		}
 	}
-	err = hi.Proccess().Err()
-	if err != nil {
-		log.Error("hybrid exit", zap.Error(err))
-	}
+
+	<-ctx.Done()
+	s.WaitUntilStopped(context.Background(), nil)
 }
 
-// merge does fan-in of multiple read-only error channels
-// taken from http://blog.golang.org/pipelines
-func merge(cs ...<-chan error) <-chan error {
-	var wg sync.WaitGroup
-	out := make(chan error)
+// IntrHandler helps set up an interrupt handler that can
+// be cleanly shut down through the io.Closer interface.
+type IntrHandler struct {
+	sig chan os.Signal
+	wg  sync.WaitGroup
+}
 
-	// Start an output goroutine for each input channel in cs.  output
-	// copies values from c to out until c is closed, then calls wg.Done.
-	output := func(c <-chan error) {
-		for n := range c {
-			out <- n
-		}
-		wg.Done()
-	}
-	for _, c := range cs {
-		if c != nil {
-			wg.Add(1)
-			go output(c)
-		}
-	}
+func NewIntrHandler() *IntrHandler {
+	ih := &IntrHandler{}
+	ih.sig = make(chan os.Signal, 1)
+	return ih
+}
 
-	// Start a goroutine to close out once all the output goroutines are
-	// done.  This must start after the wg.Add call.
+func (ih *IntrHandler) Close() error {
+	close(ih.sig)
+	ih.wg.Wait()
+	return nil
+}
+
+// Handle starts handling the given signals, and will call the handler
+// callback function each time a signal is catched. The function is passed
+// the number of times the handler has been triggered in total, as
+// well as the handler itself, so that the handling logic can use the
+// handler's wait group to ensure clean shutdown when Close() is called.
+func (ih *IntrHandler) Handle(handler func(count int, ih *IntrHandler), sigs ...os.Signal) {
+	signal.Notify(ih.sig, sigs...)
+	ih.wg.Add(1)
 	go func() {
-		wg.Wait()
-		close(out)
+		defer ih.wg.Done()
+		count := 0
+		for range ih.sig {
+			count++
+			handler(count, ih)
+		}
+		signal.Stop(ih.sig)
 	}()
-	return out
+}
+
+func setupInterruptHandler(ctx context.Context) (io.Closer, context.Context) {
+	intrh := NewIntrHandler()
+	ctx, cancelFunc := context.WithCancel(ctx)
+
+	handlerFunc := func(count int, ih *IntrHandler) {
+		switch count {
+		case 1:
+			fmt.Println() // Prevent un-terminated ^C character in terminal
+
+			ih.wg.Add(1)
+			go func() {
+				defer ih.wg.Done()
+				cancelFunc()
+			}()
+
+		default:
+			fmt.Println("Received another interrupt before graceful shutdown, terminating...")
+			os.Exit(-1)
+		}
+	}
+
+	intrh.Handle(handlerFunc, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+
+	return intrh, ctx
 }

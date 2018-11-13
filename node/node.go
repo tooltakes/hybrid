@@ -1,6 +1,7 @@
-package hybridnode
+package node
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -11,73 +12,100 @@ import (
 	"github.com/empirefox/hybrid/config"
 	"github.com/empirefox/hybrid/pkg/bufpool"
 	"github.com/empirefox/hybrid/pkg/core"
-	"github.com/empirefox/hybrid/pkg/http"
 	"github.com/empirefox/hybrid/pkg/ipfs"
+	"github.com/empirefox/hybrid/pkg/netutil"
 	"github.com/empirefox/hybrid/pkg/proxy"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	inet "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-net"
 )
 
 const PathTokenPrefix = "/token/"
 
+var (
+	ErrConfigBindNotSet = errors.New("Config.Bind not set")
+)
+
 type VerifyFunc func(peerID, token []byte) bool
+
+type Config struct {
+	Log    *zap.Logger
+	Config *config.Config
+	Ipfs   *ipfs.Ipfs
+	Verify VerifyFunc
+
+	// LocalServers can be nil
+	LocalServers map[string]http.Handler
+
+	// ConfigBindId as key of StartProxy for Config.Bind.
+	// The value should not be used by user.
+	ConfigBindId uint32
+}
 
 type Node struct {
 	log            *zap.Logger
-	config         hybridconfig.Config
-	ipfs           *hybridipfs.Ipfs
-	core           *hybridcore.Core
-	listener       net.Listener
-	listeners      []*hybridipfs.Listener
-	proxies        map[string]hybridcore.Proxy
-	fileClients    map[string]*hybridproxy.FileProxyRouterClient
+	c              config.Config
+	ipfs           *ipfs.Ipfs
+	core           *core.Core
+	ipfsListeners  []*ipfs.Listener
+	groupListeners sync.Map
+	configBindId   uint32
+	proxies        map[string]core.Proxy
+	fileClients    map[string]*proxy.FileProxyRouterClient
 	fsDisabled     map[string]bool
 	routerDisabled map[string]bool
 	fileRootDir    string
 	ruleRootDir    string
 	token          []byte
+	eg             errgroup.Group
+	closeOnce      sync.Once
 }
 
-func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, localServers map[string]http.Handler, log *zap.Logger) (*Node, error) {
-	t, err := config.ConfigTree()
+func New(nc Config) (*Node, error) {
+	c := nc.Config
+	localServers := nc.LocalServers
+	log := nc.Log
+
+	t, err := nc.Config.ConfigTree()
 	if err != nil {
 		return nil, err
 	}
 
 	n := Node{
-		log:    log,
-		config: *config,
-		ipfs:   hi,
-		proxies: map[string]hybridcore.Proxy{
-			"DIRECT": hybridcore.DirectProxy,
+		log:          log,
+		c:            *c,
+		ipfs:         nc.Ipfs,
+		configBindId: nc.ConfigBindId,
+		proxies: map[string]core.Proxy{
+			"DIRECT": core.DirectProxy,
 		},
-		fileClients:    make(map[string]*hybridproxy.FileProxyRouterClient, len(config.FileServers)),
+		fileClients:    make(map[string]*proxy.FileProxyRouterClient, len(c.FileServers)),
 		fsDisabled:     parseEnvList("HYBRID_FILE_SERVERS_DISABLED"),
 		routerDisabled: parseEnvList("HYBRID_ROUTER_DISABLED"),
 		fileRootDir:    t.FilesRootPath,
 		ruleRootDir:    t.RulesRootPath,
-		token:          []byte(config.Token),
+		token:          []byte(nc.Config.Token),
 	}
 
-	h2 := hybridproxy.NewH2Client(hybridproxy.H2ClientConfig{
+	h2 := proxy.NewH2Client(proxy.H2ClientConfig{
 		Log: log,
 	})
 
 	// IpfsServers
-	ipfsToken := []byte(config.Ipfs.Token)
+	ipfsToken := []byte(c.Ipfs.Token)
 	if len(ipfsToken) == 0 {
 		ipfsToken = n.token
 	}
-	for _, r := range config.IpfsServers {
+	for _, r := range c.IpfsServers {
 		s, err := newIpfsServer(r, ipfsToken)
 		if err != nil {
 			log.Error("newIpfsServer", zap.Error(err))
 			return nil, err
 		}
 		// /hybrid/1.0 /token/ xxx
-		protocol := hybridconfig.HybridIpfsProtocol + PathTokenPrefix + string(s.Token)
-		dialer := &hybridproxy.H2Dialer{
+		protocol := config.HybridIpfsProtocol + PathTokenPrefix + string(s.Token)
+		dialer := &proxy.H2Dialer{
 			Name: s.Name,
 			Dial: func() (net.Conn, error) { return n.ipfs.Dial(s.Peer, protocol) },
 		}
@@ -91,12 +119,12 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 
 	// FileServers
 	// newNetRouter will search with FileTest
-	for _, s := range config.FileServers {
+	for _, s := range c.FileServers {
 		name := s.Name
 		if name == "" {
 			name = s.RootZipName
 		}
-		fs, err := hybridproxy.NewFileProxyRouterClient(hybridproxy.FileClientConfig{
+		fs, err := proxy.NewFileProxyRouterClient(proxy.FileClientConfig{
 			Log:      log,
 			Dev:      s.Dev,
 			Disabled: n.fsDisabled[name],
@@ -111,20 +139,20 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 	}
 
 	// HttpProxyServers
-	for _, s := range config.HttpProxyServers {
+	for _, s := range c.HttpProxyServers {
 		name := s.Name
 		if name == "" {
 			name = strings.Replace(s.Host, ":", "-", -1)
 		}
-		p, err := hybridcore.NewExistProxy(name, s.Host, s.KeepAlive)
+		p, err := core.NewExistProxy(name, s.Host, s.KeepAlive)
 		if err != nil {
 			return nil, err
 		}
 		n.proxies[name] = p
 	}
 
-	routers := make([]hybridcore.Router, len(config.Routers))
-	for i, ri := range config.Routers {
+	routers := make([]core.Router, len(c.Routers))
+	for i, ri := range c.Routers {
 		router, err := n.newRouter(ri)
 		if err != nil {
 			n.Close()
@@ -136,21 +164,21 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 	if localServers == nil {
 		localServers = make(map[string]http.Handler)
 	}
-	if config.Ipfs.ApiServerName != "" {
+	if c.Ipfs.ApiServerName != "" {
 		// web: localStorage.setItem('ipfsApi', '/dns4/api.ipfs.with.hybrid/tcp/80')
-		localServers[config.Ipfs.ApiServerName] = hi.ApiServer()
+		localServers[c.Ipfs.ApiServerName] = n.ipfs.ApiServer()
 	}
-	if config.Ipfs.GatewayServerName != "" {
-		localServers[config.Ipfs.GatewayServerName] = hi.GatewayServer()
-	}
-
-	cc := &hybridcore.ContextConfig{
-		Transport:      http.DefaultTransport,
-		BufferPool:     hybridbufpool.Default,
-		TimeoutForCopy: time.Duration(config.TimeoutForCopyMS) * time.Millisecond,
+	if c.Ipfs.GatewayServerName != "" {
+		localServers[c.Ipfs.GatewayServerName] = n.ipfs.GatewayServer()
 	}
 
-	n.core = &hybridcore.Core{
+	cc := &core.ContextConfig{
+		Transport:     http.DefaultTransport,
+		BufferPool:    bufpool.Default,
+		FlushInterval: time.Duration(c.FlushIntervalMS) * time.Millisecond,
+	}
+
+	n.core = &core.Core{
 		Log:           log,
 		ContextConfig: cc,
 		Routers:       routers,
@@ -158,13 +186,13 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 		LocalServers:  localServers,
 	}
 
-	listeners := make([]*hybridipfs.Listener, 0, len(config.Ipfs.ListenProtocols))
-	for _, p := range config.Ipfs.ListenProtocols {
+	ipfsListeners := make([]*ipfs.Listener, 0, len(c.Ipfs.ListenProtocols))
+	for _, p := range c.Ipfs.ListenProtocols {
 		// /hybrid/1.0/token/xxx
-		tokenPrefix := hybridconfig.HybridIpfsProtocol + PathTokenPrefix
+		tokenPrefix := config.HybridIpfsProtocol + PathTokenPrefix
 		match := func(protocol string) bool { return strings.HasPrefix(protocol, tokenPrefix) }
 		// TODO what if p!=HybridIpfsProtocol
-		ln, err := hi.Listen(p, match)
+		ln, err := n.ipfs.Listen(p, match)
 		if err != nil {
 			return nil, err
 		}
@@ -172,83 +200,97 @@ func New(config *hybridconfig.Config, hi *hybridipfs.Ipfs, verify VerifyFunc, lo
 		ln.SetVerify(func(is inet.Stream) bool {
 			target := []byte(is.Conn().RemotePeer().Pretty())
 			token := []byte(strings.TrimPrefix(string(is.Protocol()), tokenPrefix))
-			return verify(target, token)
+			return nc.Verify(target, token)
 		})
-		listeners = append(listeners, ln)
+		ipfsListeners = append(ipfsListeners, ln)
 	}
-	n.listeners = listeners
+	n.ipfsListeners = ipfsListeners
 
-	if n.config.Bind != "" {
-		ln, err := net.Listen("tcp", n.config.Bind)
-		if err != nil {
-			n.log.Error("Listen", zap.Error(err))
-			n.Close()
-			return nil, err
-		}
-		n.listener = ln
+	for _, ln := range n.ipfsListeners {
+		n.eg.Go(func() error { return n.core.Serve(ln) })
 	}
+
 	return &n, nil
 }
 
-func (n *Node) StartServe() <-chan error {
-	length := len(n.listeners)
-	if n.listener != nil {
-		length++
+func (n *Node) StartConfigProxy() error {
+	if n.c.Bind == "" {
+		return ErrConfigBindNotSet
 	}
 
-	if length == 0 {
-		return nil
+	ln, err := net.Listen("tcp", n.c.Bind)
+	if err != nil {
+		return err
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(length)
-
-	out := make(chan error, length)
-	for _, ln := range n.listeners {
-		go func() {
-			out <- n.core.Serve(ln)
-			wg.Done()
-		}()
-	}
-
-	if n.listener != nil {
-		go func() {
-			err := hybridhttp.SimpleListenAndServe(n.listener, n.Proxy)
-			if err != nil {
-				n.log.Error("SimpleListenAndServe", zap.Error(err))
-			}
-			out <- err
-			wg.Done()
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(out)
-	}()
-	return out
+	n.StartProxy(n.configBindId, ln)
+	return nil
 }
 
-func (n *Node) Close() (err error) {
-	if n.listener != nil {
-		err = n.listener.Close()
-	}
+func (n *Node) StopConfigProxy() error {
+	return n.StopListener(n.configBindId)
+}
 
-	for _, fc := range n.fileClients {
-		if err != nil {
-			err = fc.Close()
-		} else {
-			fc.Close()
-		}
+func (n *Node) StartProxy(uniqueId uint32, ln net.Listener) {
+	n.groupListeners.Store(uniqueId, ln)
+	n.eg.Go(func() error {
+		defer n.groupListeners.Delete(uniqueId)
+		return netutil.SimpleServe(ln, n.proxy)
+	})
+}
+
+func (n *Node) StartIpfsApi(uniqueId uint32, ln net.Listener) {
+	n.groupListeners.Store(uniqueId, ln)
+	n.eg.Go(func() error {
+		defer n.groupListeners.Delete(uniqueId)
+		return http.Serve(ln, n.ipfs.ApiServer())
+	})
+}
+
+func (n *Node) StartIpfsGateway(uniqueId uint32, ln net.Listener) {
+	n.groupListeners.Store(uniqueId, ln)
+	n.eg.Go(func() error {
+		defer n.groupListeners.Delete(uniqueId)
+		return http.Serve(ln, n.ipfs.GatewayServer())
+	})
+}
+
+func (n *Node) StopListener(uniqueId uint32) error {
+	value, ok := n.groupListeners.Load(uniqueId)
+	if !ok {
+		return nil
 	}
+	return value.(net.Listener).Close()
+}
+
+func (n *Node) ErrGroupWait() error { return n.eg.Wait() }
+func (n *Node) Go(f func() error)   { n.eg.Go(f) }
+
+func (n *Node) Close() (err error) {
+	n.closeOnce.Do(func() {
+		for _, ln := range n.ipfsListeners {
+			ln.Close()
+		}
+		n.groupListeners.Range(func(key, value interface{}) bool {
+			value.(net.Listener).Close()
+			return true
+		})
+		for _, fc := range n.fileClients {
+			if err != nil {
+				err = fc.Close()
+			} else {
+				fc.Close()
+			}
+		}
+	})
 	return
 }
 
-func (n *Node) Proxy(conn net.Conn) {
+func (n *Node) proxy(conn net.Conn) {
 	defer conn.Close()
-	c, err := hybridcore.NewContextWithConn(n.core.ContextConfig, conn)
+	ctx, err := core.NewContextWithConn(n.core.ContextConfig, conn)
 	if err != nil {
-		he := hybridcore.HttpErr{
+		he := core.HttpErr{
 			Code:       http.StatusBadRequest,
 			ClientType: "Hybrid",
 			ClientName: "CTX",
@@ -258,5 +300,5 @@ func (n *Node) Proxy(conn net.Conn) {
 		he.Write(conn)
 		return
 	}
-	n.core.Proxy(c)
+	n.core.Proxy(ctx)
 }

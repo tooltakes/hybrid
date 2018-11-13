@@ -1,4 +1,4 @@
-package hybriddomain
+package domain
 
 import (
 	"errors"
@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	ErrBadHybridDomain = errors.New("bad hybrid domain")
+	ErrBaddomain = errors.New("bad hybrid domain")
 
 	nameRegex = regexp.MustCompile(nameRegexString)
 )
@@ -96,7 +96,7 @@ func NewDomain(hostname string) (*Domain, error) {
 	if overIdx == -1 {
 		overIdx = strings.LastIndex(hostname, overTag)
 		if overIdx == -1 {
-			return nil, ErrBadHybridDomain
+			return nil, ErrBaddomain
 		}
 		overOrWith = &overTag
 	}
@@ -137,20 +137,20 @@ func NewDomain(hostname string) (*Domain, error) {
 	rawRouters := strings.Split(hostname[routeStart:routeEnd], ".")
 	for i, rawRouter := range rawRouters {
 		if rawRouter == "" {
-			return nil, ErrBadHybridDomain
+			return nil, ErrBaddomain
 		}
 		if rawRouter[0] == '-' {
 			// not the Begin
 			d.IsBegin = false
 			rawRouters[i] = rawRouter[1:]
 			if !IsHybridName(rawRouters[i]) {
-				return nil, ErrBadHybridDomain
+				return nil, ErrBaddomain
 			}
 
 			if i != len(rawRouters)-1 {
 				d.Next = rawRouters[i+1]
 				if !IsHybridName(d.Next) {
-					return nil, ErrBadHybridDomain
+					return nil, ErrBaddomain
 				}
 				rawRouters[i+1] = "-" + d.Next
 			} else {
@@ -159,7 +159,7 @@ func NewDomain(hostname string) (*Domain, error) {
 			break
 		}
 		if !IsHybridName(rawRouter) {
-			return nil, ErrBadHybridDomain
+			return nil, ErrBaddomain
 		}
 	}
 	if d.IsBegin {

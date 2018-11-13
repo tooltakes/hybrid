@@ -1,4 +1,4 @@
-package hybridipfs
+package ipfs
 
 import (
 	"context"

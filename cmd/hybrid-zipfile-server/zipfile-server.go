@@ -16,7 +16,7 @@ func main() {
 		name = "public.zip"
 	}
 
-	hfs, closer, err := hybridzipfs.New(name)
+	hfs, closer, err := zipfs.New(name)
 	if err != nil {
 		log.Fatal(err)
 	}

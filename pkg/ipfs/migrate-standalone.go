@@ -1,12 +1,11 @@
-package hybridipfs
+package ipfs
 
 import (
 	"context"
 	"net/http"
 	"os"
 
-	"github.com/empirefox/hybrid/pkg/http"
-
+	"github.com/empirefox/hybrid/pkg/netutil"
 	oldcmds "github.com/ipsn/go-ipfs/commands"
 	"github.com/ipsn/go-ipfs/core"
 	coreiface "github.com/ipsn/go-ipfs/core/coreapi/interface"
@@ -75,7 +74,7 @@ func NewTempNode(ctx context.Context, repoPath string, config *Config) (*TempNod
 		cancel()
 		return nil, err
 	}
-	m.rt = hybridhttp.NewHandlerTransport(handler)
+	m.rt = netutil.NewHandlerTransport(handler)
 
 	return &m, nil
 }

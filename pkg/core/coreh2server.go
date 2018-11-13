@@ -1,4 +1,4 @@
-package hybridcore
+package core
 
 import (
 	"net"
@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/net/http2"
 
-	"github.com/empirefox/hybrid/pkg/http"
+	"github.com/empirefox/hybrid/pkg/netutil"
 )
 
 const (
@@ -20,7 +20,7 @@ func (core *Core) Serve(listener net.Listener) error {
 	s2 := &http2.Server{}
 	http2.ConfigureServer(s1, s2)
 
-	return hybridhttp.SimpleListenAndServe(listener, func(c net.Conn) {
+	return netutil.SimpleServe(listener, func(c net.Conn) {
 		s2.ServeConn(c, &http2.ServeConnOpts{BaseConfig: s1})
 		core.Log.Debug("ServeConn end")
 	})

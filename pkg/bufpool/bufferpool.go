@@ -1,10 +1,10 @@
-package hybridbufpool
+package bufpool
 
 import (
 	"sync"
 )
 
-const(
+const (
 	DefaultSize = 32 << 10
 )
 
@@ -23,6 +23,18 @@ func NewSize(size int) *Pool {
 	return &Pool{
 		pool: sync.Pool{
 			New: func() interface{} { return make([]byte, size) },
+		},
+	}
+}
+
+func NewSizeModify(size int, modify func([]byte)) *Pool {
+	return &Pool{
+		pool: sync.Pool{
+			New: func() interface{} {
+				b := make([]byte, size)
+				modify(b)
+				return b
+			},
 		},
 	}
 }

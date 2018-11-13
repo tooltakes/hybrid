@@ -1,4 +1,4 @@
-package hybriddomain
+package domain
 
 import (
 	"testing"

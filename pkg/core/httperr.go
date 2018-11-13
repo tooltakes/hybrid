@@ -1,4 +1,4 @@
-package hybridcore
+package core
 
 import (
 	"bytes"
@@ -47,7 +47,7 @@ func (he *HttpErr) WriteResponse(w http.ResponseWriter) error {
 }
 
 func (he *HttpErr) Response() (*http.Response, error) {
-	body := newBufferBody(hybridbufpool.Default1K)
+	body := newBufferBody(bufpool.Default1K)
 	err := json.NewEncoder(body).Encode(he)
 	if err != nil {
 		body.Close()

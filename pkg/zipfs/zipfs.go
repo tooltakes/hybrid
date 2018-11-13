@@ -1,4 +1,4 @@
-package hybridzipfs
+package zipfs
 
 import (
 	"archive/zip"

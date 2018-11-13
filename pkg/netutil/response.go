@@ -1,4 +1,4 @@
-package hybridhttp
+package netutil
 
 import (
 	"bufio"

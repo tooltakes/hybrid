@@ -1,12 +1,10 @@
-package hybridcore
+package core
 
 import (
 	"context"
 	"net/http"
 
 	"go.uber.org/zap"
-
-	"github.com/empirefox/hybrid/pkg/http"
 )
 
 type Core struct {
@@ -44,7 +42,7 @@ func (core *Core) Proxy(c *Context) {
 			if core.LocalServers != nil {
 				handler, ok := core.LocalServers[c.Domain.DialHostname]
 				if ok {
-					handler.ServeHTTP(hybridhttp.NewResponseWriter(c.Writer), c.Request)
+					handler.ServeHTTP(c.ResponseWriterOrWrapOne(), c.Request)
 					return
 				}
 			}

@@ -1,4 +1,4 @@
-package hybridproxy
+package proxy
 
 import (
 	"bytes"
@@ -23,8 +23,8 @@ var (
 type AdpRouterConfig struct {
 	Log       *zap.Logger
 	Disabled  bool
-	Blocked   hybridcore.Proxy
-	Unblocked hybridcore.Proxy
+	Blocked   core.Proxy
+	Unblocked core.Proxy
 	B64Rules  [][]byte
 	TxtRules  [][]byte
 
@@ -54,14 +54,14 @@ func NewAdpRouter(config AdpRouterConfig) (*AdpRouter, error) {
 	return r, nil
 }
 
-func (r *AdpRouter) Route(c *hybridcore.Context) hybridcore.Proxy {
+func (r *AdpRouter) Route(c *core.Context) core.Proxy {
 	if blocked := r.blocked(c); blocked {
 		return r.config.Blocked
 	}
 	return r.config.Unblocked
 }
 
-func (r *AdpRouter) blocked(c *hybridcore.Context) bool {
+func (r *AdpRouter) blocked(c *core.Context) bool {
 	r.blockedIpsMu.RLock()
 	if r.blockedIps[c.HostNoPort] {
 		r.blockedIpsMu.RUnlock()

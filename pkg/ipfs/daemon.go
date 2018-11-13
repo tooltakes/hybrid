@@ -1,4 +1,4 @@
-package hybridipfs
+package ipfs
 
 import (
 	"errors"
@@ -35,7 +35,7 @@ var (
 	ErrProtocolListened = errors.New("Protocol already listened")
 )
 
-var log = logging.Logger("hybridipfs")
+var log = logging.Logger("ipfs")
 
 type StateChangedFunc func(stateLocked *core.IpfsNode)
 
@@ -48,7 +48,7 @@ type Config struct {
 	Profile          []string // optional
 	AutoMigrate      bool
 	EnableIPNSPubSub bool
-	EnableFloodSub   bool
+	EnablePubSub     bool
 	EnableMultiplex  bool
 }
 
@@ -284,7 +284,7 @@ func startDaemon(ctx context.Context, cctx *oldcmds.Context, c *Config) error {
 		Online:                      true,
 		DisableEncryptedConnections: false,
 		ExtraOpts: map[string]bool{
-			"pubsub": c.EnableFloodSub,
+			"pubsub": c.EnablePubSub,
 			"ipnsps": c.EnableIPNSPubSub,
 			"mplex":  c.EnableMultiplex,
 		},

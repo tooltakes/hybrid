@@ -1,4 +1,4 @@
-package hybridutils
+package utils
 
 import (
 	"bytes"

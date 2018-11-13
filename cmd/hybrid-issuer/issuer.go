@@ -15,7 +15,7 @@ import (
 
 var (
 	seedHex = flag.String("seed", "", "seed in hex, generate new key pair if not set")
-	kid     = flag.Uint("kid", 0, "jwt header kid, must be uint")
+	kid     = flag.Uint64("kid", 0, "jwt header kid, must be uint64")
 	target  = flag.String("target", "", "target id in hex")
 	expires = flag.Uint("expires", 7, "jwt claim expires, default 7 days")
 	subject = flag.String("subject", "", "jwt claim subject")
@@ -46,10 +46,10 @@ func main() {
 		log.Fatalf("seed should be a 64 size hex, but got %d", len(seed))
 	}
 
-	i, err := hybridauth.NewIssuer(&hybridauth.Signer{
-		KeyID:       uint32(*kid),
-		Ed25519Seed: seed,
-		NonceSource: &hybridauth.NonceSource{
+	i, err := auth.NewIssuer(&auth.Signer{
+		KeyID: auth.KeyIDFromUint64(*kid),
+		Key:   ed25519.NewKeyFromSeed(seed),
+		NonceSource: &auth.NonceSource{
 			Len:  24,
 			Rand: rand.Reader,
 		},

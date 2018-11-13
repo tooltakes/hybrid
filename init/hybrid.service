@@ -1,0 +1,36 @@
+# Systemd service file 
+
+[Unit]
+Description=Hybrid - Connect anywhere
+After=network.target
+
+[Service]
+Type=simple
+
+# Copy the hybrid binary to /usr/bin first
+
+ExecStart=/usr/bin/hybrid
+Restart=on-failure
+
+# Change this to your user and group for increased security
+# Make sure this user/group has access to /etc/hybrid
+#User=proxy
+#Group=proxy
+
+# Uncomment this and add a password to enable authentication
+#Environment=HYBRID_ROOT_PATH=$HOME/.hybrid
+#Environment=HYBRID_DEV=false
+#Environment=HYBRID_BIND=:7777
+#Environment=HYBRID_FILE_SERVERS_DISABLED=a,b,c
+#Environment=HYBRID_ROUTER_DISABLED=a,b,c
+
+# Makes / read-only
+ProtectSystem=strict
+# … except for /etc/hybrid. Modify this if you change the default directory,
+# comment it out if you want to generate a new id on each start.
+# Remember that /etc/hybrid still needs to be writable by User!
+ReadWriteDirectories=/etc/hybrid
+
+[Install]
+WantedBy=multi-user.target
+Alias=hybrid.service

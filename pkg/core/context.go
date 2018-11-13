@@ -1,4 +1,4 @@
-package hybridcore
+package core
 
 import (
 	"bufio"
@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/empirefox/hybrid/pkg/domain"
-	"github.com/empirefox/hybrid/pkg/http"
+	"github.com/empirefox/hybrid/pkg/netutil"
 )
 
 var (
@@ -24,9 +24,9 @@ var (
 )
 
 type ContextConfig struct {
-	Transport      http.RoundTripper
-	BufferPool     httputil.BufferPool
-	TimeoutForCopy time.Duration
+	Transport     http.RoundTripper
+	BufferPool    httputil.BufferPool
+	FlushInterval time.Duration
 }
 
 type Context struct {
@@ -44,9 +44,11 @@ type Context struct {
 	HasPort      bool
 	IP           net.IP
 	DialHostPort string
-	Domain       hybriddomain.Domain
+	Domain       domain.Domain
 
 	nopCloser io.ReadCloser
+	// responseWriter non nil, if not given, wrap one.
+	responseWriter http.ResponseWriter
 }
 
 func NewContextWithConn(cc *ContextConfig, conn net.Conn) (*Context, error) {
@@ -163,14 +165,14 @@ func (c *Context) parseHostPortIP() error {
 		return nil
 	}
 
-	c.HostPort, c.HostNoPort, c.Port = hybridhttp.AuthorityAddrFull(req.URL.Scheme, req.Host)
+	c.HostPort, c.HostNoPort, c.Port = netutil.AuthorityAddrFull(req.URL.Scheme, req.Host)
 	c.HasPort = c.Port != ""
 	c.IP = net.ParseIP(c.HostNoPort)
 	return nil
 }
 
 func (c *Context) parseDomain() error {
-	domain, err := hybriddomain.NewDomain(c.HostNoPort)
+	domain, err := domain.NewDomain(c.HostNoPort)
 	if err != nil {
 		return err
 	}
@@ -210,10 +212,6 @@ func (c *Context) SendRequest(remote net.Conn, withProxy bool) (err error) {
 		err = req.Write(remote)
 	}
 	if err != nil {
-		if _, ok := err.(hybridhttp.FromWriterError); !ok {
-			// err from Request.Body
-			remote.Close()
-		}
 		return
 	}
 
@@ -357,7 +355,7 @@ func (c *Context) ReverseToResponse(tp http.RoundTripper) {
 	rp := httputil.ReverseProxy{
 		Director:       func(r *http.Request) {},
 		Transport:      tp,
-		FlushInterval:  c.TimeoutForCopy,
+		FlushInterval:  c.FlushInterval,
 		BufferPool:     c.BufferPool,
 		ModifyResponse: nil,
 	}
@@ -404,14 +402,38 @@ func (c *Context) bodyReader() io.ReadCloser {
 	return r
 }
 
-// Copy copies src to dst with BufferPool. Enable timeout read if src is net.Conn.
+func (c *Context) ResponseWriterOrWrapOne() http.ResponseWriter {
+	if c.responseWriter == nil {
+		if c.ResponseWriter != nil {
+			c.responseWriter = c.ResponseWriter
+		} else {
+			c.responseWriter = netutil.NewResponseWriter(c.Writer)
+		}
+	}
+	return c.responseWriter
+}
+
+// Copy copies src to dst with BufferPool and interval flush(CONNECT only).
 func (c *Context) Copy(dst io.Writer, src io.Reader) (int64, error) {
 	buf := c.BufferPool.Get()
 	defer c.BufferPool.Put(buf)
-	dr, ok := src.(hybridhttp.SetReadDeadlineReadCloser)
-	if ok {
-		return hybridhttp.NewTimeoutWriterTo(dr, buf, c.TimeoutForCopy).WriteTo(dst)
+	if c.Connect {
+		return netutil.CopyBufferFlush(dst, src, buf, c.FlushInterval)
 	}
+	return io.CopyBuffer(dst, src, buf)
+}
+
+// CopyFlush copies src to dst with BufferPool and interval flush.
+func (c *Context) CopyFlush(dst io.Writer, src io.Reader) (int64, error) {
+	buf := c.BufferPool.Get()
+	defer c.BufferPool.Put(buf)
+	return netutil.CopyBufferFlush(dst, src, buf, c.FlushInterval)
+}
+
+// CopyNoFlush copies src to dst with BufferPool and no interval flush.
+func (c *Context) CopyNoFlush(dst io.Writer, src io.Reader) (int64, error) {
+	buf := c.BufferPool.Get()
+	defer c.BufferPool.Put(buf)
 	return io.CopyBuffer(dst, src, buf)
 }
 

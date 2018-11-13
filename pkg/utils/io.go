@@ -1,4 +1,4 @@
-package hybridutils
+package utils
 
 import (
 	"io"
@@ -7,7 +7,7 @@ import (
 )
 
 func Copy(dst io.Writer, src io.Reader) (int64, error) {
-	buf := hybridbufpool.Default.Get()
-	defer hybridbufpool.Default.Put(buf)
+	buf := bufpool.Default.Get()
+	defer bufpool.Default.Put(buf)
 	return io.CopyBuffer(dst, src, buf)
 }

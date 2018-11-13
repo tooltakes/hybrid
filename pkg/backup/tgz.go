@@ -1,4 +1,4 @@
-package hybridbackup
+package backup
 
 import (
 	"archive/tar"

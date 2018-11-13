@@ -1,8 +1,7 @@
-package hybridauth
+package auth
 
 import (
-	"encoding/binary"
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"time"
 
@@ -12,30 +11,13 @@ import (
 )
 
 var (
-	ErrKeyIDLen    = errors.New("kid length not 8")
-	ErrKeyAlgo     = errors.New("alg not eddsa")
-	ErrKeyNotFound = errors.New("key not found")
-	ErrToxRevoked  = errors.New("tox revoked")
+	ErrKeyAlgo = errors.New("alg not eddsa")
 )
 
-type VerifyKeyer interface {
-	VerifyKey(id uint32) ([]byte, bool)
-}
+type GetKeyFunc func(keyid []byte) (key []byte, err error)
 
-type RevokeChecker interface {
-	Revoked(id []byte) bool
-}
-
-type Verifier struct {
-	VerifyKeyer
-	RevokeChecker
-}
-
-func (v *Verifier) Verify(id []byte, raw []byte) (*jwt.Claims, error) {
-	if v.Revoked(id) {
-		return nil, ErrToxRevoked
-	}
-
+// Verify decodes keyid from base64
+func (getKey GetKeyFunc) Verify(id []byte, raw []byte) (*jwt.Claims, error) {
 	tok, err := jwt.ParseSigned(string(raw))
 	if err != nil {
 		return nil, err
@@ -46,19 +28,14 @@ func (v *Verifier) Verify(id []byte, raw []byte) (*jwt.Claims, error) {
 		return nil, ErrKeyAlgo
 	}
 
-	keyid := []byte(header.KeyID)
-	if len(keyid) != 8 {
-		return nil, ErrKeyIDLen
-	}
-
-	_, err = hex.Decode(keyid, keyid)
+	keyid, err := base64.RawURLEncoding.DecodeString(header.KeyID)
 	if err != nil {
 		return nil, err
 	}
 
-	key, ok := v.VerifyKey(binary.BigEndian.Uint32(keyid[:4]))
-	if !ok {
-		return nil, ErrKeyNotFound
+	key, err := getKey(keyid)
+	if err != nil {
+		return nil, err
 	}
 
 	claims := new(jwt.Claims)

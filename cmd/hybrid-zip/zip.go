@@ -25,7 +25,7 @@ func main() {
 		*out = filepath.Join(filepath.Dir(*root), filepath.Base(*root)+".zip")
 	}
 
-	err := hybridzipfs.GzipThenZip(*root, *out)
+	err := zipfs.GzipThenZip(*root, *out)
 	if err != nil {
 		log.Fatal(err)
 	}

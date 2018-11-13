@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package protos;
+option go_package = "github.com/empirefox/hybrid/grpc";
+
+import "google/protobuf/empty.proto";
+import "protos/config.proto";
+import "protos/authstore.proto";
+
+service Hybrid {
+  rpc GetVersion(google.protobuf.Empty) returns (Version) {}
+  rpc GetConfigTree(StartRequest) returns (protos.ConfigTree) {}
+
+  rpc Start(StartRequest) returns (google.protobuf.Empty) {}
+  rpc Stop(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc WaitUntilStopped(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  rpc BindConfigProxy(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc UnbindConfigProxy(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+  rpc BindProxy(BindRequest) returns (BindData) {}
+  rpc BindIpfsApi(BindRequest) returns (BindData) {}
+  rpc BindIpfsGateway(BindRequest) returns (BindData) {}
+  rpc Unbind(BindData) returns (google.protobuf.Empty) {}
+
+  rpc IpfsRepoFsck(StartRequest) returns (google.protobuf.Empty) {}
+
+  rpc Backup(BackupRequest) returns (google.protobuf.Empty) {}
+  rpc Restore(BackupRequest) returns (google.protobuf.Empty) {}
+
+  rpc AddVerifyKey(AddVerifyKeyRequest) returns (AddVerifyKeyReply) {}
+  rpc GetVerifyKeys(VerifyKeySliceRequest) returns (AuthKeySliceReply) {}
+  rpc FindVerifyKey(VerifyKeyIdRequest) returns (protos.AuthKey) {}
+  rpc DeleteVerifyKey(VerifyKeyIdRequest) returns (google.protobuf.Empty) {}
+}
+
+message Version {
+  string hybrid_stream_protocol = 1;
+  string ipfs = 2;
+  int32 ipfs_repo = 3;
+  string libP2P_protocol = 4;
+  string go_libP2P = 5;
+  string golang = 6;
+  string system = 7;
+}
+
+message StartRequest { string root = 1; }
+
+message BindRequest {
+  string network = 1;
+  string address = 2;
+}
+message BindData { uint32 bind = 2; }
+
+message BackupRequest {
+  string root = 1;
+  string tgz = 2;
+  string password = 3;
+}
+
+message AddVerifyKeyRequest {
+  // unique
+  bytes key = 1;
+  repeated string tags = 2;
+  string desc = 3;
+  uint32 life_seconds = 4;
+}
+message AddVerifyKeyReply {
+  uint64 id = 1;
+  int64 created_at = 2;
+  int64 expires_at = 3;
+}
+
+message VerifyKeySliceRequest {
+  uint64 start = 1;
+  uint32 size = 2;
+  bool reverse = 3;
+}
+message AuthKeySliceReply {
+  repeated protos.AuthKey keys = 1;
+  string err = 2;
+}
+
+message VerifyKeyIdRequest { uint64 id = 1; }

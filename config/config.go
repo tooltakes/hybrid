@@ -5,16 +5,26 @@
 // HYBRID_BIND=:7777
 // HYBRID_FILE_SERVERS_DISABLED=a,b,c
 // HYBRID_ROUTER_DISABLED=a,b,c
-package hybridconfig
+package config
 
 const (
 	HybridIpfsProtocolVersion = "1.0"
 	HybridIpfsProtocol        = "/hybrid/1.0"
 )
 
+type Log struct {
+	Dev bool
+
+	Level string `validate:"omitempty,oneof=debug info warn error dpanic panic fatal"`
+
+	// Target accepts "nop", "tcp://host:port?timeout=5s", filepath or sentryDSN.
+	// Register NewTCPSink to support tcp sink. Default is stderr.
+	Target string
+}
+
 type Ipfs struct {
-	ListenProtocols   []string `validate:"unique" default:"[\"/hybrid/1.0\"]"`
-	FakeApiListenAddr string   `validate:"tcp_addr"`
+	ListenProtocols   []string `validate:"unique"   default:"[\"/hybrid/1.0\"]"`
+	FakeApiListenAddr string   `validate:"tcp_addr" default:"127.0.127.1:1270"`
 
 	GatewayServerName string `validate:"omitempty,hostname"`
 	ApiServerName     string `validate:"omitempty,hostname"`
@@ -22,12 +32,10 @@ type Ipfs struct {
 	Profile          []string `validate:"unique"`
 	AutoMigrate      bool
 	EnableIPNSPubSub bool
-	EnableFloodSub   bool
+	EnablePubSub     bool
 	EnableMultiplex  bool
 
-	Token        string   `validate:"lte=732"`
-	VerifyKeyHex string   `validate:"len=64,hexadecimal"`
-	Revoked      []string `validate:"unique"`
+	Token string `validate:"lte=732"`
 }
 
 // server types
@@ -90,11 +98,12 @@ type Config struct {
 	Dev     bool   `env:"HYBRID_DEV"`
 	Bind    string `env:"HYBRID_BIND validate:"omitempty,tcp_addr"`
 
-	TimeoutForCopyMS uint `default:"200"`
+	FlushIntervalMS uint `default:"200"`
 
 	// Token is fallback token that will be veried by servers, both Ipfs
 	Token string `validate:"omitempty,lte=732"`
 
+	Log  Log
 	Ipfs Ipfs
 
 	IpfsServers      []IpfsServer

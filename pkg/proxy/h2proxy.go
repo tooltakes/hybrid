@@ -1,4 +1,4 @@
-package hybridproxy
+package proxy
 
 import (
 	"github.com/empirefox/hybrid/pkg/core"
@@ -9,8 +9,8 @@ type H2Proxy struct {
 	idx    string
 }
 
-func (p *H2Proxy) HttpErr(c *hybridcore.Context, code int, info string) {
-	he := &hybridcore.HttpErr{
+func (p *H2Proxy) HttpErr(c *core.Context, code int, info string) {
+	he := &core.HttpErr{
 		Code:       code,
 		ClientType: "H2",
 		ClientName: p.idx,
@@ -20,6 +20,6 @@ func (p *H2Proxy) HttpErr(c *hybridcore.Context, code int, info string) {
 	c.HttpErr(he)
 }
 
-func (p *H2Proxy) Do(c *hybridcore.Context) error { return p.client.Proxy(c, p.idx) }
+func (p *H2Proxy) Do(c *core.Context) error { return p.client.Proxy(c, p.idx) }
 
-var _ hybridcore.Proxy = new(H2Proxy)
+var _ core.Proxy = new(H2Proxy)

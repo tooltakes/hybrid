@@ -1,4 +1,4 @@
-package hybridproxy
+package proxy
 
 import (
 	"crypto/tls"
@@ -63,7 +63,7 @@ func (h2 *H2Client) DialAndAuth(network, addr string, cfg *tls.Config) (net.Conn
 	return dialer.Dial()
 }
 
-func (h2 *H2Client) Proxy(c *hybridcore.Context, idx string) error {
+func (h2 *H2Client) Proxy(c *core.Context, idx string) error {
 	req := c.Request
 	// keep underline real conn
 	req.Close = false
@@ -78,9 +78,9 @@ func (h2 *H2Client) Proxy(c *hybridcore.Context, idx string) error {
 
 	// Host => authority|target, so the real schema can be ignored
 	if req.URL.Scheme == "https" {
-		req.Host = string(hybridcore.HostHttpsPrefix) + req.Host
+		req.Host = string(core.HostHttpsPrefix) + req.Host
 	} else {
-		req.Host = string(hybridcore.HostHttpPrefix) + req.Host
+		req.Host = string(core.HostHttpPrefix) + req.Host
 	}
 
 	// used for underline conn dial

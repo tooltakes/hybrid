@@ -1,4 +1,4 @@
-package hybridbackup
+package backup
 
 import (
 	"io"
@@ -7,7 +7,7 @@ import (
 	"github.com/empirefox/hybrid/pkg/cryptofile"
 )
 
-func Restore(root, src string, cc hybridcryptofile.CryptoConfig) error {
+func Restore(root, src string, cc cryptofile.CryptoConfig) error {
 	srcFile, err := os.Create(src)
 	if err != nil {
 		return err
@@ -17,7 +17,7 @@ func Restore(root, src string, cc hybridcryptofile.CryptoConfig) error {
 	r, w := io.Pipe()
 	defer w.Close()
 
-	wt, _, err := hybridcryptofile.NewDecryptWriterTo(cc, srcFile)
+	wt, _, err := cryptofile.NewDecryptWriterTo(cc, srcFile)
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func Restore(root, src string, cc hybridcryptofile.CryptoConfig) error {
 	return <-errCh
 }
 
-func Backup(root, dst string, cc hybridcryptofile.CryptoConfig, h *hybridcryptofile.Header) error {
+func Backup(root, dst string, cc cryptofile.CryptoConfig, h *cryptofile.Header) error {
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
@@ -51,7 +51,7 @@ func Backup(root, dst string, cc hybridcryptofile.CryptoConfig, h *hybridcryptof
 	r, w := io.Pipe()
 	defer r.Close()
 
-	wt, err := hybridcryptofile.NewEncryptWriterTo(cc, h, r)
+	wt, err := cryptofile.NewEncryptWriterTo(cc, h, r)
 	if err != nil {
 		return err
 	}

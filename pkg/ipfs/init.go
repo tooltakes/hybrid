@@ -1,4 +1,4 @@
-package hybridipfs
+package ipfs
 
 import (
 	"context"
@@ -27,7 +27,7 @@ const (
 	nBitsForKeypairDefault = 4096
 )
 
-// ForwardLog routes all ipfs logs to a file provided by brig.
+// ForwardLog routes all ipfs logs to a file.
 // Only messages >= INFO are logged.
 func ForwardLog(w io.Writer) {
 	logWriter.Configure(logWriter.Output(w))
@@ -208,6 +208,8 @@ func initializeCustomConfig(repoRoot string) error {
 		"Addresses.Gateway": "",
 		"API.HTTPHeaders.Access-Control-Allow-Origin": []string{"*"},
 		"Reprovider.Interval":                         "2h",
+		"Swarm.ConnMgr.HighWater":                     200,
+		"Swarm.ConnMgr.LowWater":                      100,
 		"Swarm.EnableRelayHop":                        true,
 	}
 

@@ -1,9 +1,9 @@
-package hybridauth
+package auth
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"time"
 
@@ -27,8 +27,9 @@ func (ns *NonceSource) Nonce() (string, error) {
 }
 
 type Signer struct {
-	KeyID       uint32
-	Ed25519Seed []byte
+	// KeyID will be encoded to base64
+	KeyID       []byte
+	Key         ed25519.PrivateKey
 	NonceSource jose.NonceSource
 	Subject     string
 	Issuer      string
@@ -43,10 +44,6 @@ type Issuer struct {
 }
 
 func NewIssuer(s *Signer) (*Issuer, error) {
-	if len(s.Ed25519Seed) != ed25519.SeedSize {
-		return nil, fmt.Errorf("ed25519 seed size should not be %d", len(s.Ed25519Seed))
-	}
-
 	opts := &jose.SignerOptions{
 		NonceSource: s.NonceSource,
 		ExtraHeaders: map[jose.HeaderKey]interface{}{
@@ -54,14 +51,11 @@ func NewIssuer(s *Signer) (*Issuer, error) {
 		},
 	}
 
-	keyid := make([]byte, 4)
-	binary.BigEndian.PutUint32(keyid, s.KeyID)
-
 	signer, err := jose.NewSigner(jose.SigningKey{
 		Algorithm: jose.EdDSA,
 		Key: jose.JSONWebKey{
-			KeyID: hex.EncodeToString(keyid),
-			Key:   ed25519.NewKeyFromSeed(s.Ed25519Seed),
+			KeyID: base64.RawURLEncoding.EncodeToString(s.KeyID),
+			Key:   s.Key,
 		},
 	}, opts)
 	if err != nil {
@@ -82,4 +76,10 @@ func (i *Issuer) Issue(claims *jwt.Claims) (string, error) {
 	claims.IssuedAt = jwt.NumericDate(time.Now().Unix())
 	claims.Expiry = claims.IssuedAt + i.expires
 	return jwt.Signed(i.signer).Claims(claims).CompactSerialize()
+}
+
+func KeyIDFromUint64(id uint64) []byte {
+	var keyid [8]byte
+	binary.BigEndian.PutUint64(keyid[:], id)
+	return keyid[:]
 }

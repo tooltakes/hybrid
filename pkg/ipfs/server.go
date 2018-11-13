@@ -1,8 +1,10 @@
-package hybridipfs
+package ipfs
 
 import (
+	_ "expvar"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"sync/atomic"
 
 	oldcmds "github.com/ipsn/go-ipfs/commands"
@@ -54,12 +56,28 @@ func newErrGatewayHanlder(err error) http.HandlerFunc {
 
 func newApiHandler(node *core.IpfsNode, cctx *oldcmds.Context, c *Config) (http.HandlerFunc, error) {
 	var opts = []corehttp.ServeOption{
+		corehttp.CheckVersionOption(),
 		corehttp.CommandsOption(*cctx), // /api/v0
 		corehttp.WebUIOption,           // /webui
 		corehttp.GatewayOption(true, "/ipfs", "/ipns"),
+		corehttp.VersionOption(),
+		defaultMux("/debug/vars"),
+		defaultMux("/debug/pprof/"),
+		corehttp.MutexFractionOption("/debug/pprof-mutex/"),
 		corehttp.LogOption(),
 	}
 	return newHttpHandler(node, c.FakeApiListenAddr, opts)
+}
+
+// defaultMux tells mux to serve path using the default muxer. This is
+// mostly useful to hook up things that register in the default muxer,
+// and don't provide a convenient http.Handler entry point, such as
+// expvar and http/pprof.
+func defaultMux(path string) corehttp.ServeOption {
+	return func(node *core.IpfsNode, _ net.Listener, mux *http.ServeMux) (*http.ServeMux, error) {
+		mux.Handle(path, http.DefaultServeMux)
+		return mux, nil
+	}
 }
 
 func newGatewayHandler(node *core.IpfsNode, cctx *oldcmds.Context, c *Config) (http.HandlerFunc, error) {
@@ -71,6 +89,7 @@ func newGatewayHandler(node *core.IpfsNode, cctx *oldcmds.Context, c *Config) (h
 	var opts = []corehttp.ServeOption{
 		IPNSHostnameOption(c.ExcludeIPNS),
 		corehttp.GatewayOption(cfg.Gateway.Writable, "/ipfs", "/ipns"),
+		corehttp.VersionOption(),
 		corehttp.CheckVersionOption(),
 		corehttp.CommandsROOption(*cctx), // /api/v0
 	}

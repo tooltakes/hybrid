@@ -1,4 +1,4 @@
-package hybridipfs
+package ipfs
 
 import (
 	"context"
@@ -133,7 +133,7 @@ func (lst *Listener) Accept() (net.Conn, error) {
 			}
 			stream.Close()
 		case <-lst.ctx.Done():
-			return nil, nil
+			return nil, lst.ctx.Err()
 		}
 	}
 }

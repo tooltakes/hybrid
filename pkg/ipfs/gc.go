@@ -1,4 +1,4 @@
-package hybridipfs
+package ipfs
 
 import (
 	"github.com/ipsn/go-ipfs/core/corerepo"
