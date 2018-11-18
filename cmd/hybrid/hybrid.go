@@ -74,13 +74,6 @@ func main() {
 		}
 	}
 
-	go func() {
-		for {
-			_, err := s.WaitUntilStopped(context.Background(), nil)
-			log.Printf("service stopped with err: %v\n", err)
-		}
-	}()
-
 	log.Printf("Hybrid started!")
 	<-ctx.Done()
 	s.WaitUntilStopped(context.Background(), nil)

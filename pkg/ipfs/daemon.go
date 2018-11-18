@@ -123,7 +123,7 @@ func (hi *Ipfs) Connect() error {
 	}
 
 	cctx := newCctx(hi.config.RepoPath)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(hi.ctx)
 	var onErr = func() {
 		cancel()
 		cctx.Close()
@@ -322,6 +322,8 @@ func startGC(ctx context.Context, node *core.IpfsNode, cfg *config.Config) {
 
 	go func() {
 		err := corerepo.PeriodicGC(ctx, node)
-		log.Error("PeriodicGC:", err)
+		if err != nil {
+			log.Error("PeriodicGC:", err)
+		}
 	}()
 }
