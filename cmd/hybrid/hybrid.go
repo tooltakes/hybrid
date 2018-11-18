@@ -49,33 +49,39 @@ func main() {
 		log.Fatalf("grpc.NewServer: %v", err)
 	}
 
-	// use empty Root means $HOME/.hybrid
-	_, err = s.Start(context.Background(), &grpc.StartRequest{Root: ""})
-	if err != nil {
-		log.Fatalf("grpc.Server.Start: %v", err)
-	}
-
-	go func() {
-		for {
-			_, err := s.WaitUntilStopped(context.Background(), nil)
-			if err != nil {
-				log.Printf("service stopped with err: %v", err)
-			}
-		}
-	}()
-
 	grpcBind := os.Getenv("HYBRID_GRPC_BIND")
 	if grpcBind != "" {
 		ln, err := net.Listen("tcp", grpcBind)
 		if err != nil {
 			log.Fatalf("listener on %s err: %v", grpcBind, err)
 		}
-		err = s.ServeGrpc(ln)
-		if err != nil {
-			log.Fatalf("ServeGrpc err: %v", err)
+		go func() {
+			err := s.ServeGrpc(ln)
+			if err != nil {
+				log.Printf("ServeGrpc err: %v", err)
+			}
+			cancel()
+		}()
+	}
+
+	// use empty Root means $HYBRID_ROOT_PATH or $HOME/.hybrid
+	_, err = s.Start(context.Background(), &grpc.StartRequest{Root: ""})
+	if err != nil {
+		if grpcBind != "" {
+			log.Printf("check the config, then start from grpc client.\n grpc.Server.Start: %v\n", err)
+		} else {
+			log.Fatalf("grpc.Server.Start: %v", err)
 		}
 	}
 
+	go func() {
+		for {
+			_, err := s.WaitUntilStopped(context.Background(), nil)
+			log.Printf("service stopped with err: %v\n", err)
+		}
+	}()
+
+	log.Printf("Hybrid started!")
 	<-ctx.Done()
 	s.WaitUntilStopped(context.Background(), nil)
 }

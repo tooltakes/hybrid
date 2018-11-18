@@ -134,7 +134,7 @@ func (s *Server) WaitUntilStopped(ctx context.Context, _ *empty.Empty) (*empty.E
 	case err := <-errc:
 		return nil, err
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil
 	}
 }
 
@@ -261,9 +261,13 @@ func (s *Server) GetVerifyKeys(_ context.Context, req *VerifyKeySliceRequest) (*
 	}
 
 	aks, err := s.service.verifyKeystore.Slice(req.Start, int(req.Size), req.Reverse)
+	var errmsg string
+	if err != nil {
+		errmsg = err.Error()
+	}
 	return &AuthKeySliceReply{
 		Keys: aks,
-		Err:  err.Error(),
+		Err:  errmsg,
 	}, nil
 }
 func (s *Server) FindVerifyKey(_ context.Context, req *VerifyKeyIdRequest) (*authstore.AuthKey, error) {

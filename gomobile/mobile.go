@@ -60,7 +60,25 @@ func (m *fromGo) DoInitOnce() ConcurrentRunner {
 			return err
 		}
 
+		const port uint16 = 1212
+		ln, err := forgo.Listen(port)
+		if err != nil {
+			log.Printf("listener on %d err: %v", port, err)
+			return err
+		}
+		defer func() {
+			if m.server == nil {
+				ln.Close()
+			}
+		}()
+
 		ctx, cancel := context.WithCancel(context.Background())
+		defer func() {
+			if m.server == nil {
+				cancel()
+			}
+		}()
+
 		server, err := grpc.NewServer(grpc.Config{
 			Context: ctx,
 			Listen: func(network, address string) (net.Listener, error) {
@@ -87,34 +105,19 @@ func (m *fromGo) DoInitOnce() ConcurrentRunner {
 			log.Printf("grpc.NewServer: %v", err)
 			return err
 		}
-
-		// use empty Root means $HOME/.hybrid
-		_, err = server.Start(context.Background(), &grpc.StartRequest{Root: ""})
-		if err != nil {
-			log.Printf("grpc.Server.Start: %v", err)
-			return err
-		}
-
-		go func() {
-			for {
-				_, err := server.WaitUntilStopped(context.Background(), nil)
-				if err != nil {
-					log.Printf("service stopped with err: %v", err)
-				}
+		defer func() {
+			if m.server == nil {
+				server.Stop(context.Background(), nil)
 			}
 		}()
 
-		const port uint16 = 1212
-		ln, err := forgo.Listen(port)
-		if err != nil {
-			log.Printf("listener on %d err: %v", port, err)
-			return err
-		}
-		err = server.ServeGrpc(ln)
-		if err != nil {
-			log.Printf("ServeGrpc err: %v", err)
-			return err
-		}
+		go func() {
+			err := server.ServeGrpc(ln)
+			if err != nil {
+				log.Printf("ServeGrpc err: %v", err)
+			}
+			cancel()
+		}()
 
 		m.server = server
 		m.cancel = cancel

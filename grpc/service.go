@@ -31,7 +31,9 @@ type Service struct {
 	ipfs           *ipfs.Ipfs
 	db             *badger.DB
 	verifyKeystore *authstore.KeyStore
-	cancel         context.CancelFunc
+
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	stoppedErr error
 	stopped    chan struct{}
@@ -131,22 +133,15 @@ func Start(ctx context.Context, root string, configBindId uint32) (*Service, err
 		return nil, err
 	}
 
-	go func(s *Service, ctx context.Context) {
-		select {
-		case <-ctx.Done():
-		}
-		s.node.Close()
-		s.db.Close()
-		s.waitUntilStopped()
-	}(&s, ctx)
-
 	s.config = c
 	s.node = node
 	s.ipfs = hi
 	s.db = db
 	s.verifyKeystore = verifyKeystore
+	s.ctx = ctx
 	s.cancel = cancel
 	s.stopped = make(chan struct{})
+	go s.waitUntilStopped()
 	return &s, nil
 }
 
@@ -160,14 +155,20 @@ func (s *Service) WaitUntilStopped() error {
 }
 
 func (s *Service) waitUntilStopped() {
+	select {
+	case <-s.ctx.Done():
+	}
+	s.node.Close()
+	s.db.Close()
+
 	var result error
 	err := s.node.ErrGroupWait()
-	if err != nil {
+	if err != nil && err != context.Canceled {
 		s.log.Error("hybrid exit", zap.Error(err))
 		result = multierror.Append(result, err)
 	}
 	err = s.ipfs.Proccess().Err()
-	if err != nil {
+	if err != nil && err != context.Canceled {
 		s.log.Error("hybrid exit", zap.Error(err))
 		result = multierror.Append(result, err)
 	}
