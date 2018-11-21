@@ -25,21 +25,15 @@ func NewIpfs(ctx context.Context, c *config.Config, log *zap.Logger) (*ipfs.Ipfs
 		return nil, err
 	}
 
-	t, err := c.ConfigTree()
-	if err != nil {
-		log.Error("ConfigTree", zap.Error(err))
-		return nil, err
-	}
-
 	ipfsConfig := &ipfs.Config{
 		FakeApiListenAddr: apiListenAddr,
 		GatewayListenAddr: gatewayAddr,
 		ExcludeIPNS:       func(host string) bool { return strings.HasSuffix(host, domain.HybridSuffix) },
 
-		RepoPath:         t.IpfsPath,
+		RepoPath:         c.Tree().IpfsPath,
 		Profile:          c.Ipfs.Profile,
 		AutoMigrate:      c.Ipfs.AutoMigrate,
-		EnableIPNSPubSub: c.Ipfs.EnableIPNSPubSub,
+		EnableIpnsPubSub: c.Ipfs.EnableIpnsPubSub,
 		EnablePubSub:     c.Ipfs.EnablePubSub,
 		EnableMultiplex:  c.Ipfs.EnableMultiplex,
 	}

@@ -49,6 +49,7 @@ func main() {
 		log.Fatalf("grpc.NewServer: %v", err)
 	}
 
+	// use https://github.com/ktr0731/evans to add verify keys
 	grpcBind := os.Getenv("HYBRID_GRPC_BIND")
 	if grpcBind != "" {
 		ln, err := net.Listen("tcp", grpcBind)

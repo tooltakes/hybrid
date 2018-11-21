@@ -18,3 +18,152 @@ message ConfigTree {
   string rules_root_name = 12;
   string rules_root_path = 13;
 }
+
+message Log {
+  // @inject_tag: toml:",omitempty"
+  bool dev = 1;
+  // @inject_tag: toml:",omitempty" validate:"omitempty,oneof=debug info warn error dpanic panic fatal"
+  string level = 2;
+  // @inject_tag: toml:",omitempty"
+  // Target accepts "nop", "tcp://host:port?timeout=5s", filepath or sentryDSN.
+  // Register NewTCPSink to support tcp sink. Default is stderr.
+  string target = 3;
+}
+
+message Ipfs {
+  // @inject_tag: toml:",omitempty" validate:"tcp_addr" default:"127.0.127.1:1270"
+  string fake_api_listen_addr = 1;
+
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string gateway_server_name = 2;
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string api_server_name = 3;
+
+  // @inject_tag: toml:",omitempty" validate:"unique"
+  repeated string profile = 4;
+  // @inject_tag: toml:",omitempty"
+  bool auto_migrate = 5;
+  // @inject_tag: toml:",omitempty"
+  bool enable_ipns_pub_sub = 6;
+  // @inject_tag: toml:",omitempty"
+  bool enable_pub_sub = 7;
+  // @inject_tag: toml:",omitempty"
+  bool enable_multiplex = 8;
+
+  // @inject_tag: toml:",omitempty" validate:"lte=732"
+  string token = 9;
+}
+
+// server types
+
+message IpfsServer {
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string name = 1;
+  // @inject_tag: toml:",omitempty" validate:"required"
+  string peer = 2;
+  // @inject_tag: toml:",omitempty" validate:"lte=732"
+  string token = 3;
+}
+
+message FileServer {
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string name = 1;
+  // @inject_tag: toml:",omitempty" validate:"hostname"
+  string zip = 2;
+  // @inject_tag: toml:",omitempty"
+  map<string, string> redirect = 3;
+  // @inject_tag: toml:",omitempty"
+  bool dev = 4;
+}
+
+message HttpProxyServer {
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string name = 1;
+  // @inject_tag: toml:",omitempty" validate:"tcp_addr"
+  string host = 2;
+  // @inject_tag: toml:",omitempty"
+  bool keep_alive = 3;
+}
+
+// server types end
+
+// routers
+
+message AdpRouter {
+  // @inject_tag: toml:",omitempty" validate:"hostname"
+  // *.b64 is base64 encoded.
+  // *.ipfs is fetched from ipfs network.
+  // ipfs file is of toml format:
+  //   [[Ipfs]]
+  //   Path = "Qmxxx..xA"
+  //   Base64 = true
+  //
+  //   [[Ipfs]]
+  //   Path = "Qmxxx..xB"
+  string rules_dir_name = 1;
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string blocked = 2;
+  // @inject_tag: toml:",omitempty" omitempty,hostname,nefield=Blocked"
+  string unblocked = 3;
+  // @inject_tag: toml:",omitempty"
+  bool etc_hosts_ip_as_blocked = 4;
+  // @inject_tag: toml:",omitempty"
+  bool dev = 5;
+}
+
+message IPNetRouter {
+  // @inject_tag: toml:",omitempty" validate:"dive,ip"
+  repeated string ip = 1;
+  // @inject_tag: toml:",omitempty" validate:"dive,cidr"
+  repeated string net = 2;
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string matched = 3;
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname,nefield=Matched"
+  string unmatched = 4;
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string file_test = 5;
+}
+
+// routers end
+
+message RouterItem {
+  // @inject_tag: toml:",omitempty" validate:"omitempty,hostname"
+  string name = 1;
+  oneof router {
+    AdpRouter adp = 2;
+    IPNetRouter ipnet = 3;
+  }
+}
+
+// reserved names: DIRECT over with hybrid
+// env:
+// HYBRID_ROOT_PATH=$HOME/.hybrid
+// HYBRID_DEV=false
+// HYBRID_BIND=:7777
+// HYBRID_FILE_SERVERS_DISABLED=a,b,c
+// HYBRID_ROUTER_DISABLED=a,b,c
+// @inject_field: tree *ConfigTree
+message Config {
+  // @inject_tag: toml:",omitempty"
+  string version = 1;
+  // @inject_tag: toml:",omitempty" env:"HYBRID_DEV"
+  bool dev = 2;
+  // @inject_tag: toml:",omitempty" env:"HYBRID_BIND validate:"omitempty,tcp_addr"
+  string bind = 3;
+
+  // @inject_tag: toml:",omitempty" default:"200"
+  uint32 flush_interval_ms = 4;
+
+  // @inject_tag: toml:",omitempty" validate:"lte=732"
+  // Token is fallback token that will be veried by servers, both Ipfs
+  string token = 5;
+
+  Log log = 6;
+  Ipfs ipfs = 7;
+
+  repeated IpfsServer ipfs_servers = 8;
+  repeated FileServer file_servers = 9;
+  repeated HttpProxyServer http_proxy_servers = 10;
+
+  repeated RouterItem routers = 11;
+}

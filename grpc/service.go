@@ -41,7 +41,7 @@ type Service struct {
 
 func Start(ctx context.Context, root string, configBindId uint32) (*Service, error) {
 	// 1. load config, root can be empty
-	c, err := config.LoadConfig(&config.Config{RootPath: root})
+	c, err := config.LoadConfig(root, nil)
 	if err != nil {
 		return nil, fmt.Errorf("LoadConfig err: %v", err)
 	}
@@ -60,11 +60,7 @@ func Start(ctx context.Context, root string, configBindId uint32) (*Service, err
 	}()
 
 	// 3. migrate-standalone need set IPFS_PATH
-	t, err := c.ConfigTree()
-	if err != nil {
-		log.Error("ConfigTree", zap.Error(err))
-		return nil, err
-	}
+	t := c.Tree()
 	os.Setenv(ipfsconfig.EnvDir, t.IpfsPath)
 
 	// 4. k/v db
@@ -106,7 +102,14 @@ func Start(ctx context.Context, root string, configBindId uint32) (*Service, err
 		return nil, err
 	}
 
-	// 7. create and start hybrid node
+	// 7. ipfs online
+	err = hi.Connect()
+	if err != nil {
+		log.Error("ipfs.Connect", zap.Error(err))
+		return nil, err
+	}
+
+	// 8. create and start hybrid node
 	node, err := node.New(node.Config{
 		Log:          log,
 		Config:       c,
@@ -125,13 +128,6 @@ func Start(ctx context.Context, root string, configBindId uint32) (*Service, err
 			node.Close()
 		}
 	}()
-
-	// 8. ipfs online
-	err = hi.Connect()
-	if err != nil {
-		log.Error("ipfs.Connect", zap.Error(err))
-		return nil, err
-	}
 
 	s.config = c
 	s.node = node

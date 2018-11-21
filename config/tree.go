@@ -1,19 +1,27 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 )
 
-func (c *Config) ConfigTree() (*ConfigTree, error) {
-	if c.tree == nil {
-		t, err := NewTree(c.RootPath)
-		if err != nil {
-			return nil, err
-		}
-		c.tree = t
+var (
+	ErrConfigTreeAlreadyInited = errors.New("config tree already inited")
+)
+
+func (c *Config) InitTree(rootPath string) error {
+	if c.Tree() != nil {
+		return ErrConfigTreeAlreadyInited
 	}
-	return c.tree, nil
+
+	t, err := NewTree(rootPath)
+	if err != nil {
+		return err
+	}
+
+	c.SetTree(t)
+	return nil
 }
 
 func NewTree(rootPath string) (*ConfigTree, error) {

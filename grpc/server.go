@@ -201,12 +201,7 @@ func (s *Server) IpfsRepoFsck(_ context.Context, req *StartRequest) (*empty.Empt
 		return nil, err
 	}
 
-	t, err := s.service.config.ConfigTree()
-	if err != nil {
-		return nil, err
-	}
-
-	if s.service != nil && rootPath == t.ConfigPath {
+	if s.service != nil && rootPath == s.service.config.Tree().ConfigPath {
 		return nil, ErrIpfsRepoLocked
 	}
 	return nil, ipfs.Fsck(rootPath)

@@ -1,10 +1,10 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 
+	"github.com/BurntSushi/toml"
 	"github.com/caarlos0/env"
 	"github.com/creasty/defaults"
 	version "github.com/hashicorp/go-version"
@@ -19,26 +19,35 @@ const (
 	ConfigVersionConstraint = "=1"
 )
 
-func LoadConfig(c *Config) (*Config, error) {
+func LoadConfig(rootPath string, c *Config) (*Config, error) {
 	if c == nil {
 		c = new(Config)
 	}
-	err := env.Parse(c)
+	c.SetTree(nil)
+
+	err := c.InitTree(rootPath)
 	if err != nil {
 		return nil, err
 	}
 
+	// 1. load env
+	err = env.Parse(c)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. load default
 	err = defaults.Set(c)
 	if err != nil {
 		return nil, err
 	}
 
-	t, err := c.ConfigTree()
-	configContent, err := ioutil.ReadFile(t.ConfigPath)
+	configContent, err := ioutil.ReadFile(c.Tree().ConfigPath)
 	if err != nil {
 		return nil, err
 	}
 
+	// 3. check config version
 	ver, err := version.NewVersion(gjson.GetBytes(configContent, "Version").String())
 	if err != nil {
 		return nil, err
@@ -54,11 +63,13 @@ func LoadConfig(c *Config) (*Config, error) {
 			ConfigVersion, ConfigVersionConstraint, ver)
 	}
 
-	err = json.Unmarshal(configContent, c)
+	// 4. unmarshal toml
+	err = toml.Unmarshal(configContent, c)
 	if err != nil {
 		return nil, err
 	}
 
+	// 5. do struct validate
 	validate := validator.New()
 	err = validate.Struct(c)
 	if err != nil {

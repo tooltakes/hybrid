@@ -47,7 +47,7 @@ type Config struct {
 	RepoPath         string
 	Profile          []string // optional
 	AutoMigrate      bool
-	EnableIPNSPubSub bool
+	EnableIpnsPubSub bool
 	EnablePubSub     bool
 	EnableMultiplex  bool
 }
@@ -285,7 +285,7 @@ func startDaemon(ctx context.Context, cctx *oldcmds.Context, c *Config) error {
 		DisableEncryptedConnections: false,
 		ExtraOpts: map[string]bool{
 			"pubsub": c.EnablePubSub,
-			"ipnsps": c.EnableIPNSPubSub,
+			"ipnsps": c.EnableIpnsPubSub,
 			"mplex":  c.EnableMultiplex,
 		},
 		//TODO(Kubuxu): refactor Online vs Offline by adding Permanent vs Ephemeral

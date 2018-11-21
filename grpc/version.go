@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/empirefox/hybrid/config"
+	"github.com/empirefox/hybrid/pkg/ipfsdial"
 	ipfs "github.com/ipfs/go-ipfs"
 	"github.com/ipsn/go-ipfs/repo/fsrepo"
 
@@ -13,12 +13,12 @@ import (
 
 func GetVersion() *Version {
 	return &Version{
-		HybridStreamProtocol: config.HybridIpfsProtocol,
-		Ipfs:                 fmt.Sprintf("%s-%s", ipfs.CurrentVersionNumber, ipfs.CurrentCommit),
-		IpfsRepo:             int32(fsrepo.RepoVersion),
-		LibP2PProtocol:       identify.LibP2PVersion,
-		GoLibP2P:             identify.ClientVersion,
-		Golang:               runtime.Version(),
-		System:               fmt.Sprintf("%s/%s", runtime.GOARCH, runtime.GOOS),
+		DialIpfsProtocol: ipfsdial.CurrentProtocol,
+		Ipfs:             fmt.Sprintf("%s-%s", ipfs.CurrentVersionNumber, ipfs.CurrentCommit),
+		IpfsRepo:         int32(fsrepo.RepoVersion),
+		LibP2PProtocol:   identify.LibP2PVersion,
+		GoLibP2P:         identify.ClientVersion,
+		Golang:           runtime.Version(),
+		System:           fmt.Sprintf("%s/%s", runtime.GOARCH, runtime.GOOS),
 	}
 }

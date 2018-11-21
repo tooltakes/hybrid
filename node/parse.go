@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -26,17 +27,16 @@ type ipfsServer struct {
 	Token    []byte
 }
 
-func newIpfsServer(raw config.IpfsServer, token []byte) (*ipfsServer, error) {
+func newIpfsServer(raw *config.IpfsServer, token []byte) (*ipfsServer, error) {
 	id, err := peer.IDB58Decode(raw.Peer)
 	if err != nil {
 		return nil, err
 	}
 
 	s := ipfsServer{
-		Name:     raw.Name,
-		Peer:     id,
-		Protocol: raw.Protocol,
-		Token:    []byte(raw.Token),
+		Name:  raw.Name,
+		Peer:  id,
+		Token: []byte(raw.Token),
 	}
 	if s.Name == "" {
 		s.Name = raw.Peer
@@ -57,12 +57,12 @@ func parseEnvList(name string) map[string]bool {
 	return list
 }
 
-func (n *Node) newRouter(raw config.RouterItem) (core.Router, error) {
-	if raw.Adp != nil && raw.IPNet == nil {
-		return n.newAdpRouter(raw.Name, raw.Adp)
+func (n *Node) newRouter(raw *config.RouterItem) (core.Router, error) {
+	if router := raw.GetAdp(); router != nil {
+		return n.newAdpRouter(raw.Name, router)
 	}
-	if raw.Adp == nil && raw.IPNet != nil {
-		return n.newNetRouter(raw.Name, raw.IPNet)
+	if router := raw.GetIpnet(); router != nil {
+		return n.newNetRouter(raw.Name, router)
 	}
 	return nil, fmt.Errorf("one and only one router can be set in RouterItem(%s)", raw.Name)
 }
@@ -71,7 +71,7 @@ func (n *Node) newAdpRouter(name string, raw *config.AdpRouter) (*proxy.AdpRoute
 	config := proxy.AdpRouterConfig{
 		Log:                 n.log,
 		Disabled:            n.routerDisabled[name],
-		EtcHostsIPAsBlocked: raw.EtcHostsIPAsBlocked,
+		EtcHostsIpAsBlocked: raw.EtcHostsIpAsBlocked,
 		Dev:                 raw.Dev,
 	}
 
@@ -90,26 +90,16 @@ func (n *Node) newAdpRouter(name string, raw *config.AdpRouter) (*proxy.AdpRoute
 		config.Unblocked = unblocked
 	}
 
-	if raw.B64RuleDirName != "" {
-		b64, err := n.readRulesDir(raw.B64RuleDirName)
-		if err != nil {
-			return nil, err
-		}
-		config.B64Rules = b64
+	rcs, err := n.openRulesDir(raw.RulesDirName)
+	if err != nil {
+		return nil, err
 	}
-
-	if raw.TxtRuleDirName != "" {
-		txt, err := n.readRulesDir(raw.TxtRuleDirName)
-		if err != nil {
-			return nil, err
-		}
-		config.TxtRules = txt
-	}
+	config.Rules = rcs
 
 	return proxy.NewAdpRouter(config)
 }
 
-func (n *Node) readRulesDir(dirname string) ([][]byte, error) {
+func (n *Node) openRulesDir(dirname string) ([]io.ReadCloser, error) {
 	dir := filepath.Join(n.ruleRootDir, dirname)
 
 	infos, err := ioutil.ReadDir(dir)
@@ -130,29 +120,31 @@ func (n *Node) readRulesDir(dirname string) ([][]byte, error) {
 	}
 
 	sort.Strings(names)
-	contents := make([][]byte, 0, len(names))
+	result := make([]io.ReadCloser, 0, 32)
 	for _, name := range names {
-		content, err := ioutil.ReadFile(filepath.Join(dir, name))
+		rcs, err := n.OpenIntentFile(dir, name)
 		if err != nil {
-			n.log.Error("readRulesDir", zap.Error(err))
+			for _, rc := range rcs {
+				rc.Close()
+			}
 			return nil, err
 		}
-		contents = append(contents, content)
+		result = append(result, rcs...)
 	}
-	return contents, nil
+	return result, nil
 }
 
 type netRouter struct {
-	IPs       []string `validate:"dive,ip"`
-	Nets      []string `validate:"dive,cidr"`
+	Ip        []string `validate:"dive,ip"`
+	Net       []string `validate:"dive,cidr"`
 	Matched   string   `validate:"required"`
 	Unmatched string   `validate:"required,nefield=Matched"`
 	FileTest  string
 }
 
 func (n *Node) newNetRouter(name string, raw *config.IPNetRouter) (*proxy.IPNetRouter, error) {
-	ips := make([]net.IP, len(raw.IPs))
-	for i, ipr := range raw.IPs {
+	ips := make([]net.IP, len(raw.Ip))
+	for i, ipr := range raw.Ip {
 		ip := net.ParseIP(ipr)
 		if ip == nil {
 			return nil, fmt.Errorf("%s is not a ip in router(%s)", ipr, name)
@@ -160,8 +152,8 @@ func (n *Node) newNetRouter(name string, raw *config.IPNetRouter) (*proxy.IPNetR
 		ips[i] = ip
 	}
 
-	nets := make([]*net.IPNet, len(raw.Nets))
-	for i, netr := range raw.Nets {
+	nets := make([]*net.IPNet, len(raw.Net))
+	for i, netr := range raw.Net {
 		_, cidr, err := net.ParseCIDR(netr)
 		if err != nil {
 			n.log.Error("IPNetRouter", zap.Error(err))

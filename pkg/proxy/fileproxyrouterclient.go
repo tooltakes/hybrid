@@ -18,7 +18,7 @@ type FileClientConfig struct {
 	Log      *zap.Logger
 	Dev      bool
 	Disabled bool
-	RootZip  string
+	Zip      string
 	Redirect map[string]string
 }
 
@@ -31,9 +31,9 @@ type FileProxyRouterClient struct {
 }
 
 func NewFileProxyRouterClient(config FileClientConfig) (*FileProxyRouterClient, error) {
-	hfs, closer, err := zipfs.New(config.RootZip + ".zip")
+	hfs, closer, err := zipfs.New(config.Zip + ".zip")
 	if err != nil {
-		config.Log.Error("zipfs.New", zap.String("RootZip", config.RootZip), zap.Error(err))
+		config.Log.Error("zipfs.New", zap.String("Zip", config.Zip), zap.Error(err))
 		return nil, err
 	}
 
@@ -105,7 +105,7 @@ func (p *FileProxyRouterClient) HttpErr(c *core.Context, code int, info string) 
 	he := &core.HttpErr{
 		Code:       code,
 		ClientType: "Zip",
-		ClientName: p.config.RootZip,
+		ClientName: p.config.Zip,
 		TargetHost: c.HostPort,
 		Info:       info,
 	}

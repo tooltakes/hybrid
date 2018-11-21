@@ -41,6 +41,9 @@ func NewFromGo() FromGo {
 }
 
 var (
+	port               = "1270"
+	defaultPort uint16 = 1270
+
 	errInvalidPort = errors.New("invalid port")
 )
 
@@ -60,10 +63,15 @@ func (m *fromGo) DoInitOnce() ConcurrentRunner {
 			return err
 		}
 
-		const port uint16 = 1212
-		ln, err := forgo.Listen(port)
+		grpcPort, err := strconv.ParseUint(port, 10, 32)
+		if grpcPort <= 0 || grpcPort > math.MaxUint16 {
+			log.Printf("use default grpc port: %d, err: %v", defaultPort, err)
+			grpcPort = uint64(defaultPort)
+		}
+
+		ln, err := forgo.Listen(uint16(grpcPort))
 		if err != nil {
-			log.Printf("listener on %d err: %v", port, err)
+			log.Printf("listener on %d err: %v", grpcPort, err)
 			return err
 		}
 		defer func() {

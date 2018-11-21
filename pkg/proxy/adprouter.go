@@ -1,8 +1,6 @@
 package proxy
 
 import (
-	"bytes"
-	"encoding/base64"
 	"errors"
 	"io"
 	"sync"
@@ -25,10 +23,9 @@ type AdpRouterConfig struct {
 	Disabled  bool
 	Blocked   core.Proxy
 	Unblocked core.Proxy
-	B64Rules  [][]byte
-	TxtRules  [][]byte
+	Rules     []io.ReadCloser
 
-	EtcHostsIPAsBlocked bool
+	EtcHostsIpAsBlocked bool
 	Dev                 bool
 }
 
@@ -69,7 +66,11 @@ func (r *AdpRouter) blocked(c *core.Context) bool {
 	}
 	r.blockedIpsMu.RUnlock()
 
-	blocked := r.AdpMatch("http://" + c.HostNoPort)
+	schema := c.Request.URL.Scheme
+	if schema == "" {
+		schema = "https"
+	}
+	blocked := r.AdpMatch(schema + "://" + c.HostNoPort)
 	if blocked {
 		r.blockedIpsMu.Lock()
 		r.blockedIps[c.HostNoPort] = true
@@ -79,20 +80,9 @@ func (r *AdpRouter) blocked(c *core.Context) bool {
 }
 
 func (r *AdpRouter) init() error {
-	var added int
-	for _, b := range r.config.TxtRules {
-		n, err := LoadAbpRules(r.adpMatcher, b, false)
-		if err != nil {
-			r.log.Error("LoadAbpRules", zap.Error(err))
-		}
-		added += n
-	}
-	for _, b := range r.config.B64Rules {
-		n, err := LoadAbpRules(r.adpMatcher, b, true)
-		if err != nil {
-			r.log.Error("LoadAbpRules", zap.Error(err))
-		}
-		added += n
+	added, err := LoadAbpRules(r.adpMatcher, r.config.Rules)
+	if err != nil {
+		r.log.Error("LoadAbpRules", zap.Error(err))
 	}
 
 	if added == 0 {
@@ -103,7 +93,7 @@ func (r *AdpRouter) init() error {
 	}
 
 	// init blockedIps only after adpMatcher
-	if r.config.EtcHostsIPAsBlocked {
+	if r.config.EtcHostsIpAsBlocked {
 		hf, errs := hostess.LoadHostfile()
 		if errs != nil {
 			if r.config.Dev {
@@ -144,20 +134,24 @@ func (r *AdpRouter) AdpMatch(u string) bool {
 }
 
 // just copy
-func LoadAbpRules(m *adblock.RuleMatcher, b []byte, b64 bool) (int, error) {
-	var r io.Reader = bytes.NewReader(b)
-	if b64 {
-		r = base64.NewDecoder(base64.StdEncoding, r)
-	}
-	parsed, err := adblock.ParseRules(r)
-	if err != nil {
-		return 0, err
-	}
+func LoadAbpRules(m *adblock.RuleMatcher, rcs []io.ReadCloser) (int, error) {
+	defer func() {
+		for _, rc := range rcs {
+			rc.Close()
+		}
+	}()
+
 	added := 0
-	for _, rule := range parsed {
-		err := m.AddRule(rule, 0)
-		if err == nil {
-			added += 1
+	for _, r := range rcs {
+		parsed, err := adblock.ParseRules(r)
+		if err != nil {
+			return 0, err
+		}
+		for _, rule := range parsed {
+			err := m.AddRule(rule, 0)
+			if err == nil {
+				added++
+			}
 		}
 	}
 	return added, nil

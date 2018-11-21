@@ -13,27 +13,25 @@ import (
 	"github.com/empirefox/hybrid/pkg/bufpool"
 	"github.com/empirefox/hybrid/pkg/core"
 	"github.com/empirefox/hybrid/pkg/ipfs"
+	"github.com/empirefox/hybrid/pkg/ipfsdial"
 	"github.com/empirefox/hybrid/pkg/netutil"
 	"github.com/empirefox/hybrid/pkg/proxy"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
-
-	inet "github.com/ipsn/go-ipfs/gxlibs/github.com/libp2p/go-libp2p-net"
 )
-
-const PathTokenPrefix = "/token/"
 
 var (
 	ErrConfigBindNotSet = errors.New("Config.Bind not set")
 )
 
-type VerifyFunc func(peerID, token []byte) bool
-
 type Config struct {
 	Log    *zap.Logger
 	Config *config.Config
-	Ipfs   *ipfs.Ipfs
-	Verify VerifyFunc
+
+	// Ipfs must be online
+	Ipfs *ipfs.Ipfs
+
+	Verify ipfsdial.VerifyFunc
 
 	// LocalServers can be nil
 	LocalServers map[string]http.Handler
@@ -67,10 +65,7 @@ func New(nc Config) (*Node, error) {
 	localServers := nc.LocalServers
 	log := nc.Log
 
-	t, err := nc.Config.ConfigTree()
-	if err != nil {
-		return nil, err
-	}
+	t := nc.Config.Tree()
 
 	n := Node{
 		log:          log,
@@ -104,7 +99,7 @@ func New(nc Config) (*Node, error) {
 			return nil, err
 		}
 		// /hybrid/1.0 /token/ xxx
-		protocol := config.HybridIpfsProtocol + PathTokenPrefix + string(s.Token)
+		protocol := ipfsdial.DialProtocol(s.Token)
 		dialer := &proxy.H2Dialer{
 			Name: s.Name,
 			Dial: func() (net.Conn, error) { return n.ipfs.Dial(s.Peer, protocol) },
@@ -122,13 +117,13 @@ func New(nc Config) (*Node, error) {
 	for _, s := range c.FileServers {
 		name := s.Name
 		if name == "" {
-			name = s.RootZipName
+			name = s.Zip
 		}
 		fs, err := proxy.NewFileProxyRouterClient(proxy.FileClientConfig{
 			Log:      log,
 			Dev:      s.Dev,
 			Disabled: n.fsDisabled[name],
-			RootZip:  filepath.Join(n.fileRootDir, s.RootZipName),
+			Zip:      filepath.Join(n.fileRootDir, s.Zip),
 			Redirect: s.Redirect,
 		})
 		if err != nil {
@@ -175,7 +170,7 @@ func New(nc Config) (*Node, error) {
 	cc := &core.ContextConfig{
 		Transport:     http.DefaultTransport,
 		BufferPool:    bufpool.Default,
-		FlushInterval: time.Duration(c.FlushIntervalMS) * time.Millisecond,
+		FlushInterval: time.Duration(c.FlushIntervalMs) * time.Millisecond,
 	}
 
 	n.core = &core.Core{
@@ -186,26 +181,18 @@ func New(nc Config) (*Node, error) {
 		LocalServers:  localServers,
 	}
 
-	ipfsListeners := make([]*ipfs.Listener, 0, len(c.Ipfs.ListenProtocols))
-	for _, p := range c.Ipfs.ListenProtocols {
-		// /hybrid/1.0/token/xxx
-		tokenPrefix := config.HybridIpfsProtocol + PathTokenPrefix
-		match := func(protocol string) bool { return strings.HasPrefix(protocol, tokenPrefix) }
-		// TODO what if p!=HybridIpfsProtocol
-		ln, err := n.ipfs.Listen(p, match)
-		if err != nil {
-			return nil, err
-		}
-
-		ln.SetVerify(func(is inet.Stream) bool {
-			target := []byte(is.Conn().RemotePeer().Pretty())
-			token := []byte(strings.TrimPrefix(string(is.Protocol()), tokenPrefix))
-			return nc.Verify(target, token)
-		})
-		ipfsListeners = append(ipfsListeners, ln)
+	ipfsListeners := make([]*ipfs.Listener, 0, 1)
+	// add listener for /hybrid/
+	ln, err := n.ipfs.Listen(ipfsdial.ProtocolPrefix, ipfsdial.ListenMatch)
+	if err != nil {
+		return nil, err
 	}
-	n.ipfsListeners = ipfsListeners
 
+	ln.SetVerify(ipfsdial.VerifyToken(nc.Verify))
+	ipfsListeners = append(ipfsListeners, ln)
+	// add more listeners here
+
+	n.ipfsListeners = ipfsListeners
 	for _, ln := range n.ipfsListeners {
 		n.eg.Go(func() error { return n.core.Serve(ln) })
 	}

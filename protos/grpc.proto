@@ -35,7 +35,7 @@ service Hybrid {
 }
 
 message Version {
-  string hybrid_stream_protocol = 1;
+  string dial_ipfs_protocol = 1;
   string ipfs = 2;
   int32 ipfs_repo = 3;
   string libP2P_protocol = 4;
