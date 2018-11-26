@@ -41,8 +41,8 @@ func NewFromGo() FromGo {
 }
 
 var (
-	port               = "1270"
-	defaultPort uint16 = 1270
+	port               = "1"
+	defaultPort uint16 = 1
 
 	errInvalidPort = errors.New("invalid port")
 )

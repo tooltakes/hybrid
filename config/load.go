@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 
 	"github.com/BurntSushi/toml"
 	"github.com/caarlos0/env"
 	"github.com/creasty/defaults"
 	version "github.com/hashicorp/go-version"
+	homedir "github.com/mitchellh/go-homedir"
 	"github.com/tidwall/gjson"
 	validator "gopkg.in/go-playground/validator.v9"
 )
@@ -20,6 +22,10 @@ const (
 )
 
 func LoadConfig(rootPath string, c *Config) (*Config, error) {
+	if rootPath == "" {
+		rootPath = filepath.Join(homedir.Dir(), ".hybrid")
+	}
+
 	if c == nil {
 		c = new(Config)
 	}

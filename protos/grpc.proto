@@ -11,12 +11,16 @@ service Hybrid {
   rpc GetVersion(google.protobuf.Empty) returns (Version) {}
   rpc GetConfigTree(StartRequest) returns (protos.ConfigTree) {}
 
+  rpc GetConfig(GetConfigRequest) returns (protos.Config) {}
+  rpc SaveConfig(SaveConfigRequest) returns (google.protobuf.Empty) {}
+
   rpc Start(StartRequest) returns (google.protobuf.Empty) {}
   rpc Stop(google.protobuf.Empty) returns (google.protobuf.Empty) {}
   rpc WaitUntilStopped(google.protobuf.Empty) returns (google.protobuf.Empty) {}
 
   rpc BindConfigProxy(google.protobuf.Empty) returns (google.protobuf.Empty) {}
-  rpc UnbindConfigProxy(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc UnbindConfigProxy(google.protobuf.Empty) returns (google.protobuf.Empty) {
+  }
 
   rpc BindProxy(BindRequest) returns (BindData) {}
   rpc BindIpfsApi(BindRequest) returns (BindData) {}
@@ -45,6 +49,16 @@ message Version {
 }
 
 message StartRequest { string root = 1; }
+
+message GetConfigRequest {
+  string root = 1;
+  bool load = 2;
+}
+
+message SaveConfigRequest {
+  string root = 1;
+  protos.Config config = 2;
+}
 
 message BindRequest {
   string network = 1;

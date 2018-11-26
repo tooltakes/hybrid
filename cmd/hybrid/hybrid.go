@@ -65,8 +65,8 @@ func main() {
 		}()
 	}
 
-	// use empty Root means $HYBRID_ROOT_PATH or $HOME/.hybrid
-	_, err = s.Start(context.Background(), &grpc.StartRequest{Root: ""})
+	// $HYBRID_ROOT_PATH or $HOME/.hybrid
+	_, err = s.Start(context.Background(), &grpc.StartRequest{Root: os.Getenv("HYBRID_ROOT_PATH")})
 	if err != nil {
 		if grpcBind != "" {
 			log.Printf("check the config, then start from grpc client.\n grpc.Server.Start: %v\n", err)
