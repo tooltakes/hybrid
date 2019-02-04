@@ -16,5 +16,7 @@ class LoadAppEnv extends AppEnv {
   final String androidIcon = 'app_icon';
 
   @override
-  String hybridDirName = '.hybrid';
+  final String hybridDirName = '.hybrid';
+  @override
+  final int hybridPort = 1;
 }

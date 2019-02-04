@@ -10,7 +10,7 @@ description: Decentralized access anywhere.
 version: 1.0.0+1
 
 environment:
-  sdk: ">=2.0.0-dev.68.0 <3.0.0"
+  sdk: ">=2.0.0 <3.0.0"
 
 dependencies:
   flutter:
@@ -20,17 +20,18 @@ dependencies:
   intl:
   intl_translation:
 
+  card_settings: ^1.2.5
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^0.1.2
-  flutter_bloc: ^0.4.1
-  flutter_local_notifications: ^0.4.2
-  package_info: ^0.3.2
-  path_provider: ^0.4.1
-  rxdart: ^0.19.0
+  flutter_bloc: ^0.5.3
+  flutter_local_notifications: ^0.4.5
+  package_info: ^0.4.0
+  path_provider: ^0.5.0
+  rxdart: ^0.20.0
 
   flutter_dial_go:
-    git: git@192.168.65.195:empirefox/flutter_dial_go.git
+    git: https://github.com/empirefox/flutter_dial_go.git
   grpc:
     git: https://github.com/empirefox/grpc-dart.git
   protobuf: ^0.10.4

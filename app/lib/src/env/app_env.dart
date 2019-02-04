@@ -20,6 +20,7 @@ abstract class AppEnv {
   String get androidIcon;
 
   String get hybridDirName;
+  int get hybridPort;
 }
 
 AppEnv _appEnv;

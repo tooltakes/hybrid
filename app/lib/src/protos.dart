@@ -1,3 +1,6 @@
+export './google/protobuf/empty.pb.dart';
+export './google/protobuf/empty.pbenum.dart';
+
 export './protos/authstore.pb.dart';
 export './protos/authstore.pbenum.dart';
 export './protos/config.pb.dart';
