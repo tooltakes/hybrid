@@ -125,6 +125,111 @@ class AppLocalizations {
       name: 'about',
     );
   }
+
+  String get configureBackAlertTitle {
+    return Intl.message(
+      'Alert',
+      name: 'configureBackAlertTitle',
+    );
+  }
+
+  String get configureBackAlertContent {
+    return Intl.message(
+      'Are you sure go back without save to stage.',
+      name: 'configureBackAlertContent',
+    );
+  }
+
+  String get configureBackAlertStay {
+    return Intl.message(
+      'Stay',
+      name: 'configureBackAlertStay',
+    );
+  }
+
+  String get configureBackAlertGoBack {
+    return Intl.message(
+      'Go back',
+      name: 'configureBackAlertGoBack',
+    );
+  }
+
+  String get configureBasicTitle {
+    return Intl.message(
+      'Basic',
+      name: 'configureBasicTitle',
+    );
+  }
+
+  String get configureBasicDevLabel {
+    return Intl.message(
+      'Dev',
+      name: 'configureBasicDevLabel',
+    );
+  }
+
+  String get configureBasicBindLabel {
+    return Intl.message(
+      'Bind',
+      name: 'configureBasicBindLabel',
+    );
+  }
+
+  String get configureBasicBindHint {
+    return Intl.message(
+      'Address that should be set to proxy settings',
+      name: 'configureBasicBindHint',
+    );
+  }
+
+  String get configureBasicBindBadTcpAddr {
+    return Intl.message(
+      'Accept only tcp addresses',
+      name: 'configureBasicBindBadTcpAddr',
+    );
+  }
+
+  String get configureBasicFlushIntervalLabel {
+    return Intl.message(
+      'FlushInterval',
+      name: 'configureBasicFlushIntervalLabel',
+    );
+  }
+
+  String get configureBasicFlushIntervalUnitLabel {
+    return Intl.message(
+      'ms',
+      name: 'configureBasicFlushIntervalUnitLabel',
+    );
+  }
+
+  String get configureBasicFlushIntervalNegtive {
+    return Intl.message(
+      'Accept positive values',
+      name: 'configureBasicFlushIntervalNegtive',
+    );
+  }
+
+  String get configureBasicFlushIntervalUint32 {
+    return Intl.message(
+      'Accept uint32 values',
+      name: 'configureBasicFlushIntervalUint32',
+    );
+  }
+
+  String get configureBasicTokenLabel {
+    return Intl.message(
+      'Token',
+      name: 'configureBasicTokenLabel',
+    );
+  }
+
+  String get configureLogDevLabel {
+    return Intl.message(
+      'Dev',
+      name: 'configureLogDevLabel',
+    );
+  }
 }
 
 class AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
