@@ -8,8 +8,8 @@ import 'package:intl/intl.dart';
 // directory:
 //
 // flutter pub get
-// flutter pub pub run intl_translation:extract_to_arb --output-dir=lib/src/l10n lib/src/l10n/hybrid_l10n.dart
-// flutter pub pub run intl_translation:generate_from_arb --output-dir=lib/src/l10n --no-use-deferred-loading lib/src/l10n/hybrid_l10n.dart lib/src/l10n/intl_*.arb
+// flutter pub pub run intl_translation:extract_to_arb --output-dir=lib/src/l10n lib/src/l10n/app.l10n.dart
+// flutter pub pub run intl_translation:generate_from_arb --output-dir=lib/src/l10n --no-use-deferred-loading lib/src/l10n/app.l10n.dart lib/src/l10n/intl_*.arb
 //
 // The second command generates intl_messages.arb and the third generates
 // messages_all.dart. There's more about this process in
