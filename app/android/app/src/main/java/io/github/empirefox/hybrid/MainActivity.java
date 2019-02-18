@@ -1,4 +1,4 @@
-package io.github.empirefox.hybrid.hybrid;
+package io.github.empirefox.hybrid;
 
 import android.os.Bundle;
 import io.flutter.app.FlutterActivity;
