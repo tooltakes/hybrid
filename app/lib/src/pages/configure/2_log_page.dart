@@ -7,9 +7,6 @@ import '../../protos.dart';
 import './configure_leaf_page.dart';
 
 class ConfigLogPage extends StatelessWidget {
-  static final RegExp ipv4RegExp = RegExp(
-      r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$");
-
   final Log configLog;
 
   const ConfigLogPage({Key key, this.configLog}) : super(key: key);
@@ -23,37 +20,42 @@ class ConfigLogPage extends StatelessWidget {
         children: <Widget>[
           // dev
           CardSettingsSwitch(
-            label: l10n.configureLogDevLabel,
+            label: l10n.devModeLabel,
             initialValue: configLog.dev,
             onSaved: (value) => configLog.dev = value,
           ),
           // level
           CardSettingsListPicker(
-            label: 'Type',
-            initialValue: _ponyModel.type,
-            hintText: 'Select One',
-            autovalidate: _autoValidate,
-            options: <String>['Earth', 'Unicorn', 'Pegasi', 'Alicorn'],
+            label: l10n.configureLogLevelLabel,
+            initialValue: configLog.level,
+            autovalidate: autoValidate,
+            options: <String>[
+              'debug',
+              'info',
+              'warn',
+              'error',
+              'dpanic',
+              'panic',
+              'fatal',
+            ],
             validator: (String value) {
-              if (value == null || value.isEmpty)
-                return 'You must pick a type.';
-              return null;
+              return value == null || value.isEmpty
+                  ? l10n.configureLogLevelEmpty
+                  : null;
             },
-            onSaved: (value) => _ponyModel.type = value,
-            onChanged: (value) => _showSnackBar('Type', value),
+            onSaved: (value) => configLog.level = value,
           ),
           // target
           CardSettingsText(
-            label: l10n.configureBasicBindLabel,
-            hintText: l10n.configureBasicBindHint,
-            initialValue: config.bind,
+            label: l10n.configureLogTargetLabel,
+            hintText: l10n.configureLogTargetHint,
+            initialValue: configLog.target,
             autovalidate: autoValidate,
             validator: (value) {
-              if (value == null || value.isEmpty || ipv4RegExp.hasMatch(value))
-                return null;
-              return l10n.configureBasicBindBadTcpAddr;
+              // sync with golang
+              return null;
             },
-            onSaved: (value) => config.bind = value,
+            onSaved: (value) => configLog.target = value,
           ),
           Container(height: 4.0)
         ],

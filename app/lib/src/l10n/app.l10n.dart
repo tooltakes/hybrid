@@ -112,10 +112,10 @@ class AppLocalizations {
     );
   }
 
-  String get settings {
+  String get configure {
     return Intl.message(
-      'Settings',
-      name: 'settings',
+      'Configure',
+      name: 'configure',
     );
   }
 
@@ -123,6 +123,13 @@ class AppLocalizations {
     return Intl.message(
       'About',
       name: 'about',
+    );
+  }
+
+  String get devModeLabel {
+    return Intl.message(
+      'Dev',
+      name: 'devModeLabel',
     );
   }
 
@@ -158,13 +165,6 @@ class AppLocalizations {
     return Intl.message(
       'Basic',
       name: 'configureBasicTitle',
-    );
-  }
-
-  String get configureBasicDevLabel {
-    return Intl.message(
-      'Dev',
-      name: 'configureBasicDevLabel',
     );
   }
 
@@ -224,10 +224,31 @@ class AppLocalizations {
     );
   }
 
-  String get configureLogDevLabel {
+  String get configureLogLevelLabel {
     return Intl.message(
-      'Dev',
-      name: 'configureLogDevLabel',
+      'Level',
+      name: 'configureLogLevelLabel',
+    );
+  }
+
+  String get configureLogLevelEmpty {
+    return Intl.message(
+      'Must pick a level',
+      name: 'configureLogLevelEmpty',
+    );
+  }
+
+  String get configureLogTargetLabel {
+    return Intl.message(
+      'Target',
+      name: 'configureLogTargetLabel',
+    );
+  }
+
+  String get configureLogTargetHint {
+    return Intl.message(
+      '"tcp://host:port?timeout=5s", file, sentryDSN or empty',
+      name: 'configureLogTargetHint',
     );
   }
 }

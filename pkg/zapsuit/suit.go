@@ -17,13 +17,13 @@ type Config struct {
 
 	Level *zapcore.Level
 
-	// Target accepts "nop", "tcp://host:port?timeout=5s", filepath or sentryDSN.
+	// Target accepts "tcp://host:port?timeout=5s", file, sentryDSN or empty.
 	// Register NewTCPSink to support tcp sink. Default is stderr.
 	Target string
 }
 
 func NewZap(config *Config, options ...zap.Option) (*zap.Logger, error) {
-	if config.Target == "nop" {
+	if config.Target == "" {
 		return zap.NewNop(), nil
 	}
 
