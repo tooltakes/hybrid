@@ -39,11 +39,11 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           ListTile(
-            title: Text(l10n.settings),
+            title: Text(l10n.configure),
             leading: Icon(Icons.settings),
             onTap: () {
               Navigator.pop(context);
-              Navigator.pushNamed(context, AppRoutes.settings);
+              Navigator.pushNamed(context, AppRoutes.configure);
             },
           ),
           Divider(),

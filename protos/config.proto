@@ -25,7 +25,7 @@ message Log {
   // @inject_tag: toml:",omitempty" validate:"omitempty,oneof=debug info warn error dpanic panic fatal"
   string level = 2;
   // @inject_tag: toml:",omitempty"
-  // Target accepts "nop", "tcp://host:port?timeout=5s", filepath or sentryDSN.
+  // Target accepts "tcp://host:port?timeout=5s", file, sentryDSN or empty.
   // Register NewTCPSink to support tcp sink. Default is stderr.
   string target = 3;
 }

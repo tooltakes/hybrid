@@ -24,7 +24,7 @@ class ConfigBasicPage extends StatelessWidget {
         children: <Widget>[
           // dev
           CardSettingsSwitch(
-            label: l10n.configureBasicDevLabel,
+            label: l10n.devModeLabel,
             initialValue: config.dev,
             onSaved: (value) => config.dev = value,
           ),

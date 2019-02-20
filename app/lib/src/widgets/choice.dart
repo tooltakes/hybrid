@@ -16,7 +16,8 @@ class Choice {
 class AppPopupMenuButton extends StatelessWidget {
   final List<Choice> choices;
 
-  const AppPopupMenuButton({Key key, this.choices}) : super(key: key);
+  const AppPopupMenuButton({Key key, this.choices = const []})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {

@@ -1,3 +1,5 @@
+# Created by:
+#  flutter create --org io.github.empirefox -i swift --project-name hybrid --description "Decentralized access anywhere." app
 name: hybrid
 description: Decentralized access anywhere.
 
@@ -6,11 +8,15 @@ description: Decentralized access anywhere.
 # followed by an optional build number separated by a +.
 # Both the version and the builder number may be overridden in flutter
 # build by specifying --build-name and --build-number, respectively.
-# Read more about versioning at semver.org.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 version: 1.0.0+1
 
 environment:
-  sdk: ">=2.0.0 <3.0.0"
+  sdk: ">=2.1.0 <3.0.0"
 
 dependencies:
   flutter:
@@ -20,14 +26,14 @@ dependencies:
   intl:
   intl_translation:
 
-  card_settings: ^1.2.5
+  card_settings: ^1.3.1
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^0.1.2
-  flutter_bloc: ^0.5.3
-  flutter_local_notifications: ^0.4.5
-  package_info: ^0.4.0
-  path_provider: ^0.5.0
+  flutter_bloc: ^0.6.2
+  flutter_local_notifications: ^0.5.1+2
+  package_info: ^0.4.0+1
+  path_provider: ^0.5.0+1
   rxdart: ^0.20.0
 
   flutter_dial_go:
